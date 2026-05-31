@@ -1,0 +1,31 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(brew list *)",
+      "Bash(psql --version)",
+      "Bash(/opt/homebrew/bin/brew --version)",
+      "Bash(/usr/local/bin/brew --version)",
+      "Read(//usr/local/**)",
+      "Read(//Applications/**)",
+      "Bash(ls /opt/ 2>/dev/null; ls /usr/local/bin/ 2>/dev/null | head -20)",
+      "Read(//opt/**)",
+      "Bash(node -e \"console.log\\(require\\('crypto'\\).randomBytes\\(32\\).toString\\('hex'\\)\\)\")",
+      "Bash(psql postgresql://Parhum@localhost:5432/coachos_dev -f /Users/Parhum/coachos-backend/src/db/schema.sql)",
+      "Bash(/opt/homebrew/bin/psql postgresql://Parhum@localhost:5432/coachos_dev -f /Users/Parhum/coachos-backend/src/db/schema.sql)",
+      "Bash(node -e ' *)",
+      "Bash(/opt/homebrew/bin/psql postgresql://Parhum@localhost:5432/coachos_dev)",
+      "Bash(node server.js)",
+      "Bash(curl -s -X POST http://localhost:3000/api/auth/login -H 'Content-Type: application/json' -d '{\"username\":\"parhum\",\"password\":\"ChangeMe123!\"}')",
+      "Bash(curl -s -X POST http://localhost:3000/api/auth/login -H 'Content-Type: application/json' -d '{\"username\":\"TLC\",\"password\":\"Typing69!\"}')",
+      "Bash(kill %1)",
+      "Bash(curl -s http://localhost:3000/health)",
+      "Bash(node -e \"require\\('./src/routes/coaches'\\)\")",
+      "Bash(xargs kill -9)",
+      "Bash(node -e \"require\\('nodemailer'\\)\")",
+      "Bash(npm install *)",
+      "Bash(node -e \"require\\('./src/services/notifications'\\); console.log\\('module loads ok'\\)\")",
+      "Bash(/opt/homebrew/bin/psql postgresql://Parhum@localhost:5432/coachos_dev -c ' *)",
+      "Bash(python3 -m json.tool)"
+    ]
+  }
+}
