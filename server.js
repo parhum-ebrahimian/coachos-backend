@@ -25,7 +25,23 @@ const agents = {
 
 const app = express();
 
-app.use(cors());
+const ALLOWED_ORIGINS = [
+  /^https:\/\/.*\.lovable\.app$/,
+  /^https:\/\/.*\.lovableproject\.com$/,
+  'http://localhost:5173',
+];
+
+app.use(cors({
+  origin: (origin, callback) => {
+    // Allow server-to-server requests with no Origin header
+    if (!origin) return callback(null, true);
+    const allowed = ALLOWED_ORIGINS.some(o =>
+      typeof o === 'string' ? o === origin : o.test(origin)
+    );
+    callback(allowed ? null : new Error(`CORS: origin ${origin} not allowed`), allowed);
+  },
+  credentials: true,
+}));
 app.use(express.json());
 
 // ---------------------------------------------------------------------------
