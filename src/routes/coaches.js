@@ -57,7 +57,7 @@ router.post('/', requireAdmin, async (req, res) => {
 
 // PATCH /api/coaches/:id — admin only
 router.patch('/:id', requireAdmin, async (req, res) => {
-  const allowed = ['name', 'email', 'plan', 'subdomain', 'branding'];
+  const allowed = ['name', 'email', 'plan', 'subdomain', 'branding', 'status'];
   const updates = Object.fromEntries(
     Object.entries(req.body).filter(([k]) => allowed.includes(k))
   );
