@@ -82,6 +82,31 @@ router.patch('/:id', requireAdmin, async (req, res) => {
   }
 });
 
+// PATCH /api/coaches/:id/username — admin only
+router.patch('/:id/username', requireAdmin, async (req, res) => {
+  const { username } = req.body;
+  if (!username || username.length < 3) {
+    return res.status(400).json({ error: 'Username must be at least 3 characters' });
+  }
+  try {
+    const { rows: taken } = await pool.query(
+      'SELECT id FROM users WHERE username = $1 AND coach_id != $2 LIMIT 1',
+      [username, req.params.id]
+    );
+    if (taken.length > 0) {
+      return res.status(409).json({ error: 'Username is already taken' });
+    }
+    await pool.query(
+      'UPDATE users SET username = $1 WHERE coach_id = $2',
+      [username, req.params.id]
+    );
+    res.json({ success: true, username });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // POST /api/coaches/:id/reset-password — admin only
 router.post('/:id/reset-password', requireAdmin, async (req, res) => {
   const { password } = req.body;
