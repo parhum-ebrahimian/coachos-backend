@@ -37,21 +37,40 @@ router.get('/:id', async (req, res) => {
 
 // POST /api/coaches — admin only
 router.post('/', requireAdmin, async (req, res) => {
-  const { name, email, plan = 'free', subdomain, branding = {} } = req.body;
+  const { name, email, username, password, plan = 'free', subdomain, branding = {} } = req.body;
   if (!name || !email) {
     return res.status(400).json({ error: 'name and email are required' });
   }
+  if (!username) return res.status(400).json({ error: 'username is required' });
+  if (!password) return res.status(400).json({ error: 'password is required' });
+
+  const client = await pool.connect();
   try {
-    const { rows } = await pool.query(
+    await client.query('BEGIN');
+
+    const { rows } = await client.query(
       `INSERT INTO coaches (name, email, plan, subdomain, branding)
        VALUES ($1, $2, $3, $4, $5) RETURNING *`,
       [name, email, plan, subdomain || null, JSON.stringify(branding)]
     );
-    res.status(201).json(rows[0]);
+    const coach = rows[0];
+
+    const password_hash = await bcrypt.hash(password, 10);
+    await client.query(
+      `INSERT INTO users (username, password_hash, name, role, coach_id, deletable)
+       VALUES ($1, $2, $3, 'trainer', $4, true)`,
+      [username, password_hash, name, coach.id]
+    );
+
+    await client.query('COMMIT');
+    res.status(201).json(coach);
   } catch (err) {
-    if (err.code === '23505') return res.status(409).json({ error: 'Email or subdomain already in use' });
+    await client.query('ROLLBACK');
+    if (err.code === '23505') return res.status(409).json({ error: 'Email, subdomain, or username already in use' });
     console.error(err);
     res.status(500).json({ error: 'Internal server error' });
+  } finally {
+    client.release();
   }
 });
 
