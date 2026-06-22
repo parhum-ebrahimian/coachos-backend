@@ -76,24 +76,40 @@ router.post('/', requireAdmin, async (req, res) => {
 
 // PATCH /api/coaches/:id — admin only
 router.patch('/:id', requireAdmin, async (req, res) => {
-  const allowed = ['name', 'email', 'plan', 'subdomain', 'branding', 'status'];
+  const allowed = ['name', 'email', 'plan', 'subdomain', 'branding'];
   const updates = Object.fromEntries(
     Object.entries(req.body).filter(([k]) => allowed.includes(k))
   );
-  if (Object.keys(updates).length === 0) {
+  const { status } = req.body;
+
+  if (Object.keys(updates).length === 0 && status === undefined) {
     return res.status(400).json({ error: 'No valid fields provided' });
   }
 
-  const setClauses = Object.keys(updates).map((k, i) => `"${k}" = $${i + 2}`);
-  const values = [req.params.id, ...Object.values(updates)];
-
   try {
-    const { rows } = await pool.query(
-      `UPDATE coaches SET ${setClauses.join(', ')} WHERE id = $1 RETURNING *`,
-      values
-    );
-    if (!rows[0]) return res.status(404).json({ error: 'Coach not found' });
-    res.json(rows[0]);
+    let row;
+
+    if (Object.keys(updates).length > 0) {
+      const setClauses = Object.keys(updates).map((k, i) => `"${k}" = $${i + 2}`);
+      const values = [req.params.id, ...Object.values(updates)];
+      const { rows } = await pool.query(
+        `UPDATE coaches SET ${setClauses.join(', ')} WHERE id = $1 RETURNING *`,
+        values
+      );
+      if (!rows[0]) return res.status(404).json({ error: 'Coach not found' });
+      row = rows[0];
+    }
+
+    if (status !== undefined) {
+      const { rows } = await pool.query(
+        `UPDATE coaches SET branding = jsonb_set(branding::jsonb, '{status}', $2::jsonb, true) WHERE id = $1 RETURNING *`,
+        [req.params.id, JSON.stringify(status)]
+      );
+      if (!rows[0]) return res.status(404).json({ error: 'Coach not found' });
+      row = rows[0];
+    }
+
+    res.json(row);
   } catch (err) {
     if (err.code === '23505') return res.status(409).json({ error: 'Email or subdomain already in use' });
     console.error(err);
