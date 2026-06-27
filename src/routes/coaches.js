@@ -74,13 +74,24 @@ router.post('/', requireAdmin, async (req, res) => {
   }
 });
 
-// PATCH /api/coaches/:id — admin only
-router.patch('/:id', requireAdmin, async (req, res) => {
-  const allowed = ['name', 'email', 'plan', 'subdomain', 'branding'];
+// PATCH /api/coaches/:id
+router.patch('/:id', async (req, res) => {
+  const isAdmin = req.user.role === 'admin';
+
+  if (!isAdmin) {
+    if (String(req.user.coach_id) !== String(req.params.id)) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+  }
+
+  const adminFields   = ['name', 'email', 'plan', 'subdomain', 'branding', 'trainerize_api_key', 'trainerize_trainer_id'];
+  const trainerFields = ['trainerize_api_key', 'trainerize_trainer_id'];
+  const allowed = isAdmin ? adminFields : trainerFields;
+
   const updates = Object.fromEntries(
     Object.entries(req.body).filter(([k]) => allowed.includes(k))
   );
-  const { status } = req.body;
+  const status = isAdmin ? req.body.status : undefined;
 
   if (Object.keys(updates).length === 0 && status === undefined) {
     return res.status(400).json({ error: 'No valid fields provided' });
