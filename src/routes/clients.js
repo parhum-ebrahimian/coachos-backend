@@ -1,6 +1,7 @@
 const express = require('express');
 const pool = require('../db');
 const auth = require('../middleware/auth');
+const trainerize = require('../services/trainerize');
 
 const router = express.Router();
 
@@ -16,11 +17,41 @@ router.get('/', async (req, res) => {
       coachId = req.user.coach_id;
     }
 
-    const { rows } = coachId
-      ? await pool.query('SELECT * FROM clients WHERE coach_id = $1 ORDER BY id', [coachId])
-      : await pool.query('SELECT * FROM clients ORDER BY id');
+    if (!coachId) {
+      return res.json([]);
+    }
 
-    res.json(rows);
+    const { rows: coaches } = await pool.query(
+      'SELECT trainerize_trainer_id, trainerize_api_key FROM coaches WHERE id = $1',
+      [coachId]
+    );
+    const coach = coaches[0];
+
+    if (!coach?.trainerize_trainer_id || !coach?.trainerize_api_key) {
+      console.warn(`[clients] Coach ${coachId} missing Trainerize credentials`);
+      return res.json([]);
+    }
+
+    const credentials = { groupId: coach.trainerize_trainer_id, apiKey: coach.trainerize_api_key };
+    const data = await trainerize.getClients(credentials);
+
+    const clients = (data?.users ?? []).map(user => ({
+      id:              user.id,
+      trainerize_id:   user.id,
+      name:            `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim(),
+      firstName:       user.firstName,
+      lastName:        user.lastName,
+      email:           user.email,
+      phoneNumber:     user.phoneNumber,
+      status:          user.status,
+      isActive:        user.isActive,
+      mealPlan:        user.mealPlan,
+      trainingPlan:    user.trainingPlan,
+      created:         user.created,
+      latestSignedIn:  user.latestSignedIn,
+    }));
+
+    res.json(clients);
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Internal server error' });
