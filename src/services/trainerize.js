@@ -58,12 +58,25 @@ async function getClientWeightLogs(credentials, clientId) {
   return data?.bodystats ?? [];
 }
 
+async function getThread(credentials, clientId) {
+  const trainerId = await getTrainerId(credentials);
+  const data = await request(credentials, '/message/getThread', {
+    userId: trainerId,
+    view: 'userList',
+    threadID: null,
+    recipients: [clientId],
+  });
+  return data.thread.threadID;
+}
+
 async function getMessages(credentials, clientId) {
-  return request(credentials, `/clients/${clientId}/messages`, {});
+  const threadId = await getThread(credentials, clientId);
+  return request(credentials, '/message/getMessages', { threadId });
 }
 
 async function sendMessage(credentials, clientId, message) {
-  return request(credentials, `/clients/${clientId}/messages`, { message });
+  const threadId = await getThread(credentials, clientId);
+  return request(credentials, '/message/reply', { threadId, body: message, type: 'text' });
 }
 
 async function getClientNutritionPlan(credentials, clientId) {
@@ -92,6 +105,7 @@ module.exports = {
   PLATFORM_ADAPTER,
   getTrainerList,
   getTrainerId,
+  getThread,
   getClients,
   getClientSummary,
   getClientWeightLogs,
