@@ -1,138 +1,99 @@
-// Swap to a different platform by changing this constant and replacing this file.
 const PLATFORM_ADAPTER = 'trainerize';
 
-const BASE_URL = 'https://api.trainerize.com/v1';
+const BASE_URL = 'https://api.trainerize.com/v03';
 
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
 
-function authHeader({ trainerId, apiKey }) {
-  const encoded = Buffer.from(`${trainerId}:${apiKey}`).toString('base64');
+function authHeader({ groupId, apiKey }) {
+  const encoded = Buffer.from(`${groupId}:${apiKey}`).toString('base64');
   return `Basic ${encoded}`;
 }
 
-async function request(credentials, method, path, body) {
-  const options = {
-    method,
+async function request(credentials, path, body = {}) {
+  const res = await fetch(`${BASE_URL}${path}`, {
+    method: 'POST',
     headers: {
       Authorization: authHeader(credentials),
       'Content-Type': 'application/json',
       Accept: 'application/json',
     },
-  };
-  if (body !== undefined) {
-    options.body = JSON.stringify(body);
-  }
-
-  const res = await fetch(`${BASE_URL}${path}`, options);
+    body: JSON.stringify(body),
+  });
 
   if (!res.ok) {
     const text = await res.text().catch(() => '');
-    throw new Error(`Trainerize ${method} ${path} failed: ${res.status} ${text}`);
+    throw new Error(`Trainerize POST ${path} failed: ${res.status} ${text}`);
   }
 
   const text = await res.text();
   return text ? JSON.parse(text) : null;
 }
 
-const get  = (creds, path)        => request(creds, 'GET',   path);
-const post = (creds, path, body)  => request(creds, 'POST',  path, body);
-const put  = (creds, path, body)  => request(creds, 'PUT',   path, body);
-
 // ---------------------------------------------------------------------------
 // Public adapter functions
 // ---------------------------------------------------------------------------
 
-/**
- * Fetches all active coaching clients for a coach.
- * @param {{ trainerId: string, apiKey: string }} coachCredentials
- */
-async function getClients(coachCredentials) {
-  return get(coachCredentials, '/clients?status=active');
+async function getTrainerList(credentials) {
+  return request(credentials, '/User/getTrainerList', {});
 }
 
-/**
- * Fetches weight log history for a specific client.
- * @param {{ trainerId: string, apiKey: string }} coachCredentials
- * @param {string|number} clientId
- */
-async function getClientWeightLogs(coachCredentials, clientId) {
-  return get(coachCredentials, `/clients/${clientId}/weightlogs`);
+async function getTrainerId(credentials) {
+  const data = await getTrainerList(credentials);
+  return data.users[0].id;
 }
 
-/**
- * Fetches the current meal/nutrition plan for a client.
- * @param {{ trainerId: string, apiKey: string }} coachCredentials
- * @param {string|number} clientId
- */
-async function getClientNutritionPlan(coachCredentials, clientId) {
-  return get(coachCredentials, `/clients/${clientId}/nutritionplan`);
+async function getClients(credentials) {
+  const trainerId = await getTrainerId(credentials);
+  return request(credentials, '/User/getList', { trainerId });
 }
 
-/**
- * Fetches the current workout program for a client.
- * @param {{ trainerId: string, apiKey: string }} coachCredentials
- * @param {string|number} clientId
- */
-async function getClientWorkoutPlan(coachCredentials, clientId) {
-  return get(coachCredentials, `/clients/${clientId}/workoutprogram`);
+async function getClientSummary(credentials, clientId) {
+  return request(credentials, '/User/getClientSummary', { userId: clientId, unitWeight: 'lbs' });
 }
 
-/**
- * Pushes an updated meal/nutrition plan to a client.
- * @param {{ trainerId: string, apiKey: string }} coachCredentials
- * @param {string|number} clientId
- * @param {object} planData
- */
-async function updateNutritionPlan(coachCredentials, clientId, planData) {
-  return put(coachCredentials, `/clients/${clientId}/nutritionplan`, planData);
+async function getClientWeightLogs(credentials, clientId) {
+  const data = await getClientSummary(credentials, clientId);
+  return data?.bodystats ?? [];
 }
 
-/**
- * Pushes an updated workout program to a client.
- * @param {{ trainerId: string, apiKey: string }} coachCredentials
- * @param {string|number} clientId
- * @param {object} planData
- */
-async function updateWorkoutPlan(coachCredentials, clientId, planData) {
-  return put(coachCredentials, `/clients/${clientId}/workoutprogram`, planData);
+async function getMessages(credentials, clientId) {
+  return request(credentials, `/clients/${clientId}/messages`, {});
 }
 
-/**
- * Fetches message history between coach and client.
- * @param {{ trainerId: string, apiKey: string }} coachCredentials
- * @param {string|number} clientId
- */
-async function getMessages(coachCredentials, clientId) {
-  return get(coachCredentials, `/clients/${clientId}/messages`);
+async function sendMessage(credentials, clientId, message) {
+  return request(credentials, `/clients/${clientId}/messages`, { message });
 }
 
-/**
- * Sends a message to a client.
- * @param {{ trainerId: string, apiKey: string }} coachCredentials
- * @param {string|number} clientId
- * @param {string} message
- */
-async function sendMessage(coachCredentials, clientId, message) {
-  return post(coachCredentials, `/clients/${clientId}/messages`, { message });
+async function getClientNutritionPlan(credentials, clientId) {
+  return request(credentials, `/clients/${clientId}/nutritionplan`, {});
 }
 
-/**
- * Fetches completed workout session logs for a client.
- * Returns sessions with exercise-level detail: name, sets, reps, weight, completedAt.
- * @param {{ trainerId: string, apiKey: string }} coachCredentials
- * @param {string|number} clientId
- */
-async function getWorkoutLogs(coachCredentials, clientId) {
-  return get(coachCredentials, `/clients/${clientId}/workoutlogs`);
+async function getClientWorkoutPlan(credentials, clientId) {
+  return request(credentials, `/clients/${clientId}/workoutprogram`, {});
+}
+
+async function updateNutritionPlan(credentials, clientId, planData) {
+  return request(credentials, `/clients/${clientId}/nutritionplan`, planData);
+}
+
+async function updateWorkoutPlan(credentials, clientId, planData) {
+  return request(credentials, `/clients/${clientId}/workoutprogram`, planData);
+}
+
+async function getWorkoutLogs(credentials, clientId) {
+  return request(credentials, `/clients/${clientId}/workoutlogs`, {});
 }
 
 // ---------------------------------------------------------------------------
 
 module.exports = {
   PLATFORM_ADAPTER,
+  getTrainerList,
+  getTrainerId,
   getClients,
+  getClientSummary,
   getClientWeightLogs,
   getClientNutritionPlan,
   getClientWorkoutPlan,
