@@ -58,6 +58,43 @@ router.get('/', async (req, res) => {
   }
 });
 
+// GET /api/clients/:id/weight — weight history from Trainerize
+router.get('/:id/weight', async (req, res) => {
+  try {
+    let coachId;
+    if (req.user.role === 'admin') {
+      coachId = req.query.coach_id ? parseInt(req.query.coach_id, 10) : null;
+    } else {
+      coachId = req.user.coach_id;
+    }
+
+    if (!coachId) return res.json([]);
+
+    const { rows: coaches } = await pool.query(
+      'SELECT trainerize_trainer_id, trainerize_api_key FROM coaches WHERE id = $1',
+      [coachId]
+    );
+    const coach = coaches[0];
+
+    if (!coach?.trainerize_trainer_id || !coach?.trainerize_api_key) {
+      console.warn(`[clients/weight] Coach ${coachId} missing Trainerize credentials`);
+      return res.json([]);
+    }
+
+    const credentials = { groupId: coach.trainerize_trainer_id, apiKey: coach.trainerize_api_key };
+    const bodystats = await trainerize.getClientWeightLogs(credentials, req.params.id);
+
+    const filtered = bodystats
+      .filter(entry => entry.weight > 0 && entry.isProjected === false)
+      .sort((a, b) => new Date(a.date) - new Date(b.date));
+
+    res.json(filtered);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // GET /api/clients/:id
 router.get('/:id', async (req, res) => {
   try {
