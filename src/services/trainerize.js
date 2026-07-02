@@ -61,7 +61,23 @@ async function getClients(credentials) {
 }
 
 async function getClientSummary(credentials, clientId) {
-  return request(credentials, '/User/getClientSummary', { userId: clientId, unitWeight: 'lbs' });
+  const delays = [5000, 10000, 20000, 30000];
+  let lastErr;
+  for (let attempt = 0; attempt <= delays.length; attempt++) {
+    try {
+      return await request(credentials, '/User/getClientSummary', { userId: clientId, unitWeight: 'lbs' });
+    } catch (err) {
+      lastErr = err;
+      if (attempt < delays.length && err.message.includes('rate limit or HTML')) {
+        const wait = delays[attempt];
+        console.warn(`[Trainerize] Rate limit on getClientSummary for client ${clientId}, retry ${attempt + 1}/${delays.length} in ${wait / 1000}s`);
+        await new Promise((resolve) => setTimeout(resolve, wait));
+      } else {
+        throw err;
+      }
+    }
+  }
+  throw lastErr;
 }
 
 async function getClientWeightLogs(credentials, clientId) {
