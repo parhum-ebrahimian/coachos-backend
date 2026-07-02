@@ -47,15 +47,6 @@ function detectPlateau(logs) {
   return { plateauWeeks: PLATEAU_MIN_WEEKS, averageWeight: avgWeight, weeklyChange: parseFloat(weeklyChange), trend, logs: recent };
 }
 
-async function batchProcess(items, batchSize, delay, fn) {
-  for (let i = 0; i < items.length; i += batchSize) {
-    await Promise.all(items.slice(i, i + batchSize).map(fn));
-    if (i + batchSize < items.length) {
-      await new Promise((resolve) => setTimeout(resolve, delay));
-    }
-  }
-}
-
 async function scanClients(coachId) {
   const [settings, creds] = await Promise.all([
     getAgentSettings(coachId),
@@ -70,44 +61,45 @@ async function scanClients(coachId) {
 
   const results = { scanned: clients.length, flagged: [], plateaus: [], errors: [] };
 
-  await batchProcess(clients, 2, 1500, async (client) => {
-      try {
-        const logsResponse = await trainerize.getClientWeightLogs(creds, client.id);
-        const logs = logsResponse?.logs ?? logsResponse ?? [];
+  for (const client of clients) {
+    try {
+      const logsResponse = await trainerize.getClientWeightLogs(creds, client.id);
+      const logs = logsResponse?.logs ?? logsResponse ?? [];
 
-        if (isMissingWeighIn(logs)) {
-          const msg = await anthropic.messages.create({
-            model: 'claude-haiku-4-5-20251001',
-            max_tokens: 200,
-            messages: [
-              {
-                role: 'user',
-                content: `Write a 2-sentence coach note flagging that ${client.name} hasn't logged their weight in over ${MISSING_WEIGH_IN_DAYS} days. Suggest reaching out to check in. Keep it warm and brief.`,
-              },
-            ],
-          });
+      if (isMissingWeighIn(logs)) {
+        const msg = await anthropic.messages.create({
+          model: 'claude-haiku-4-5-20251001',
+          max_tokens: 200,
+          messages: [
+            {
+              role: 'user',
+              content: `Write a 2-sentence coach note flagging that ${client.name} hasn't logged their weight in over ${MISSING_WEIGH_IN_DAYS} days. Suggest reaching out to check in. Keep it warm and brief.`,
+            },
+          ],
+        });
 
-          const draft = msg.content[0].text;
-          const autoSend = settings.autonomous && 80 >= settings.threshold;
+        const draft = msg.content[0].text;
+        const autoSend = settings.autonomous && 80 >= settings.threshold;
 
-          await pool.query(
-            `INSERT INTO queue_items (coach_id, agent, client_name, preview, draft, auto_send)
-             VALUES ($1, $2, $3, $4, $5, $6)`,
-            [coachId, 'progress-monitor', client.name, `Missing weigh-in — ${client.name}`, draft, autoSend]
-          );
+        await pool.query(
+          `INSERT INTO queue_items (coach_id, agent, client_name, preview, draft, auto_send)
+           VALUES ($1, $2, $3, $4, $5, $6)`,
+          [coachId, 'progress-monitor', client.name, `Missing weigh-in — ${client.name}`, draft, autoSend]
+        );
 
-          results.flagged.push({ clientId: client.id, clientName: client.name, reason: 'missing-weigh-in' });
-        }
-
-        const plateau = detectPlateau(logs);
-        if (plateau) {
-          await mealPlan.generateAdjustment(coachId, client.id, plateau);
-          results.plateaus.push({ clientId: client.id, clientName: client.name, ...plateau });
-        }
-      } catch (err) {
-        results.errors.push({ clientId: client.id, clientName: client.name, error: err.message });
+        results.flagged.push({ clientId: client.id, clientName: client.name, reason: 'missing-weigh-in' });
       }
-  });
+
+      const plateau = detectPlateau(logs);
+      if (plateau) {
+        await mealPlan.generateAdjustment(coachId, client.id, plateau);
+        results.plateaus.push({ clientId: client.id, clientName: client.name, ...plateau });
+      }
+    } catch (err) {
+      results.errors.push({ clientId: client.id, clientName: client.name, error: err.message });
+    }
+    await new Promise((resolve) => setTimeout(resolve, 3000));
+  }
 
   return results;
 }

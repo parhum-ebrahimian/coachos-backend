@@ -2,6 +2,8 @@ const PLATFORM_ADAPTER = 'trainerize';
 
 const BASE_URL = 'https://api.trainerize.com/v03';
 
+const trainerIdCache = new Map();
+
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
@@ -44,8 +46,13 @@ async function getTrainerList(credentials) {
 }
 
 async function getTrainerId(credentials) {
+  if (trainerIdCache.has(credentials.apiKey)) {
+    return trainerIdCache.get(credentials.apiKey);
+  }
   const data = await getTrainerList(credentials);
-  return data.users[0].id;
+  const id = data.users[0].id;
+  trainerIdCache.set(credentials.apiKey, id);
+  return id;
 }
 
 async function getClients(credentials) {
