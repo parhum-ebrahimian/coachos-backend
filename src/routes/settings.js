@@ -1,7 +1,9 @@
 const express = require('express');
 const pool = require('../db');
 const auth = require('../middleware/auth');
+const { requireAdmin } = require('../middleware/auth');
 const { updateCoachSchedule } = require('../jobs/scheduler');
+const { scanClients } = require('../agents/progressMonitor');
 
 const router = express.Router();
 
@@ -135,6 +137,13 @@ router.patch('/scan-schedule', async (req, res) => {
     console.error(err);
     res.status(500).json({ error: 'Internal server error' });
   }
+});
+
+// POST /api/settings/agents/scan — trigger an immediate progress monitor scan
+router.post('/agents/scan', requireAdmin, async (req, res) => {
+  const coachId = resolveCoachId(req);
+  res.json({ success: true, message: 'Scan started' });
+  scanClients(coachId).catch((err) => console.error('Background scan error:', err));
 });
 
 module.exports = router;
