@@ -19,11 +19,11 @@ async function getAgentSettings(coachId) {
 
 async function getTrainerizeCredentials(coachId) {
   const { rows } = await pool.query(
-    `SELECT branding->'trainerize' AS creds FROM coaches WHERE id = $1`,
+    'SELECT trainerize_trainer_id, trainerize_api_key FROM coaches WHERE id = $1',
     [coachId]
   );
-  if (!rows[0]?.creds) throw new Error(`No Trainerize credentials configured for coach ${coachId}`);
-  return rows[0].creds;
+  if (!rows[0]?.trainerize_api_key) throw new Error(`No Trainerize credentials configured for coach ${coachId}`);
+  return { groupId: rows[0].trainerize_trainer_id, apiKey: rows[0].trainerize_api_key };
 }
 
 function isMissingWeighIn(logs) {
@@ -53,10 +53,11 @@ async function scanClients(coachId) {
     getTrainerizeCredentials(coachId),
   ]);
 
-  const { rows: clients } = await pool.query(
-    `SELECT id, name FROM clients WHERE coach_id = $1 AND status = 'active'`,
-    [coachId]
-  );
+  const data = await trainerize.getClients(creds);
+  const clients = (data?.users ?? []).map(u => ({
+    id:   u.id,
+    name: `${u.firstName ?? ''} ${u.lastName ?? ''}`.trim() || u.name || `Client #${u.id}`,
+  }));
 
   const results = { scanned: clients.length, flagged: [], plateaus: [], errors: [] };
 

@@ -15,11 +15,11 @@ async function getAgentSettings(coachId) {
 
 async function getTrainerizeCredentials(coachId) {
   const { rows } = await pool.query(
-    `SELECT branding->'trainerize' AS creds FROM coaches WHERE id = $1`,
+    'SELECT trainerize_trainer_id, trainerize_api_key FROM coaches WHERE id = $1',
     [coachId]
   );
-  if (!rows[0]?.creds) throw new Error(`No Trainerize credentials configured for coach ${coachId}`);
-  return rows[0].creds;
+  if (!rows[0]?.trainerize_api_key) throw new Error(`No Trainerize credentials configured for coach ${coachId}`);
+  return { groupId: rows[0].trainerize_trainer_id, apiKey: rows[0].trainerize_api_key };
 }
 
 async function draftResponse(coachId, clientId, incomingMessage) {
