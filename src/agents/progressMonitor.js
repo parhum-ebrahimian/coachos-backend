@@ -70,7 +70,7 @@ async function scanClients(coachId) {
 
   const results = { scanned: clients.length, flagged: [], plateaus: [], errors: [] };
 
-  await batchProcess(clients, 3, 500, async (client) => {
+  await batchProcess(clients, 2, 1500, async (client) => {
       try {
         const logsResponse = await trainerize.getClientWeightLogs(creds, client.id);
         const logs = logsResponse?.logs ?? logsResponse ?? [];

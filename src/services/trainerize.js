@@ -28,7 +28,11 @@ async function request(credentials, path, body = {}) {
   }
 
   const text = await res.text();
-  return text ? JSON.parse(text) : null;
+  if (!text) return null;
+  if (text.trimStart().startsWith('<') || text.includes('<!DOCTYPE')) {
+    throw new Error('Trainerize rate limit or HTML response received — try again later');
+  }
+  return JSON.parse(text);
 }
 
 // ---------------------------------------------------------------------------
