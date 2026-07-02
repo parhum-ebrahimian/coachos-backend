@@ -142,6 +142,9 @@ router.patch('/scan-schedule', async (req, res) => {
 // POST /api/settings/agents/scan — trigger an immediate progress monitor scan
 router.post('/agents/scan', requireAdmin, async (req, res) => {
   const coachId = resolveCoachId(req);
+  if (!coachId) {
+    return res.status(400).json({ error: 'coach_id is required for admin users — pass ?coach_id=1' });
+  }
   res.json({ success: true, message: 'Scan started' });
   scanClients(coachId).catch((err) => console.error('Background scan error:', err));
 });
