@@ -61,7 +61,10 @@ async function scanClients(coachId) {
 
   const results = { scanned: clients.length, flagged: [], plateaus: [], errors: [] };
 
+  console.log(`[ProgressMonitor] Starting scan for coach ${coachId}, ${clients.length} clients`);
+
   for (const client of clients) {
+    console.log(`[ProgressMonitor] Scanning ${client.name} (${client.id})`);
     try {
       const logsResponse = await trainerize.getClientWeightLogs(creds, client.id);
       const logs = logsResponse?.logs ?? logsResponse ?? [];
@@ -88,18 +91,23 @@ async function scanClients(coachId) {
         );
 
         results.flagged.push({ clientId: client.id, clientName: client.name, reason: 'missing-weigh-in' });
+        console.log(`[ProgressMonitor] Flagged ${client.name}: missing-weigh-in`);
       }
 
       const plateau = detectPlateau(logs);
       if (plateau) {
         await mealPlan.generateAdjustment(coachId, client.id, plateau);
         results.plateaus.push({ clientId: client.id, clientName: client.name, ...plateau });
+        console.log(`[ProgressMonitor] Flagged ${client.name}: plateau`);
       }
     } catch (err) {
       results.errors.push({ clientId: client.id, clientName: client.name, error: err.message });
+      console.error(`[ProgressMonitor] Error for ${client.name}: ${err.message}`);
     }
     await new Promise((resolve) => setTimeout(resolve, 3000));
   }
+
+  console.log(`[ProgressMonitor] Scan complete — scanned: ${results.scanned}, flagged: ${results.flagged.length}, errors: ${results.errors.length}`);
 
   return results;
 }
