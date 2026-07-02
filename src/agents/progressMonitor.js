@@ -47,6 +47,15 @@ function detectPlateau(logs) {
   return { plateauWeeks: PLATEAU_MIN_WEEKS, averageWeight: avgWeight, weeklyChange: parseFloat(weeklyChange), trend, logs: recent };
 }
 
+async function batchProcess(items, batchSize, delay, fn) {
+  for (let i = 0; i < items.length; i += batchSize) {
+    await Promise.all(items.slice(i, i + batchSize).map(fn));
+    if (i + batchSize < items.length) {
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+  }
+}
+
 async function scanClients(coachId) {
   const [settings, creds] = await Promise.all([
     getAgentSettings(coachId),
@@ -61,8 +70,7 @@ async function scanClients(coachId) {
 
   const results = { scanned: clients.length, flagged: [], plateaus: [], errors: [] };
 
-  await Promise.all(
-    clients.map(async (client) => {
+  await batchProcess(clients, 3, 500, async (client) => {
       try {
         const logsResponse = await trainerize.getClientWeightLogs(creds, client.id);
         const logs = logsResponse?.logs ?? logsResponse ?? [];
@@ -99,8 +107,7 @@ async function scanClients(coachId) {
       } catch (err) {
         results.errors.push({ clientId: client.id, clientName: client.name, error: err.message });
       }
-    })
-  );
+  });
 
   return results;
 }
