@@ -70,7 +70,7 @@ async function getClientSummary(credentials, clientId) {
       lastErr = err;
       if (attempt < delays.length && err.message.includes('rate limit or HTML')) {
         const wait = delays[attempt];
-        console.warn(`[Trainerize] Rate limit on getClientSummary for client ${clientId}, retry ${attempt + 1}/${delays.length} in ${wait / 1000}s`);
+        console.log(`[Trainerize] Rate limit on getClientSummary for client ${clientId}, retry ${attempt + 1}/${delays.length} in ${wait / 1000}s`);
         await new Promise((resolve) => setTimeout(resolve, wait));
       } else {
         throw err;
