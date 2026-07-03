@@ -95,6 +95,71 @@ router.get('/:id/weight', async (req, res) => {
   }
 });
 
+// GET /api/clients/:id/summary — full client detail for the detail panel
+router.get('/:id/summary', async (req, res) => {
+  try {
+    let coachId;
+    if (req.user.role === 'admin') {
+      coachId = req.query.coach_id ? parseInt(req.query.coach_id, 10) : null;
+    } else {
+      coachId = req.user.coach_id;
+    }
+
+    if (!coachId) return res.status(400).json({ error: 'coach_id is required' });
+
+    const { rows: coaches } = await pool.query(
+      'SELECT trainerize_trainer_id, trainerize_api_key FROM coaches WHERE id = $1',
+      [coachId]
+    );
+    const coach = coaches[0];
+
+    if (!coach?.trainerize_trainer_id || !coach?.trainerize_api_key) {
+      return res.status(400).json({ error: 'Coach missing Trainerize credentials' });
+    }
+
+    const credentials = { groupId: coach.trainerize_trainer_id, apiKey: coach.trainerize_api_key };
+    const clientId = req.params.id;
+
+    const [summary, messagesResult] = await Promise.allSettled([
+      trainerize.getClientSummary(credentials, clientId),
+      trainerize.getMessages(credentials, clientId),
+    ]);
+
+    const data = summary.status === 'fulfilled' ? summary.value : null;
+    if (summary.status === 'rejected') {
+      return res.status(502).json({ error: summary.reason?.message ?? 'Failed to fetch client summary' });
+    }
+
+    const bodystats = (data?.bodystats ?? [])
+      .filter(e => e.weight > 0 && e.isProjected === false)
+      .sort((a, b) => new Date(a.date) - new Date(b.date));
+
+    const messages = messagesResult.status === 'fulfilled'
+      ? (messagesResult.value?.messages ?? []).slice(-10)
+      : [];
+
+    if (messagesResult.status === 'rejected') {
+      console.warn(`[clients/summary] getMessages failed for client ${clientId}:`, messagesResult.reason?.message);
+    }
+
+    res.json({
+      id:               clientId,
+      bodystats,
+      lastWeight:       data?.lastWeight ?? null,
+      lastWeightDate:   data?.lastWeightDate ?? null,
+      workoutsByWeek:   data?.workoutsByWeek ?? null,
+      nutritionByWeek:  data?.nutritionByWeek ?? null,
+      mealPlan:         data?.mealPlan ?? null,
+      program:          data?.program ?? null,
+      goal:             data?.goal ?? null,
+      messages,
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // GET /api/clients/:id
 router.get('/:id', async (req, res) => {
   try {
