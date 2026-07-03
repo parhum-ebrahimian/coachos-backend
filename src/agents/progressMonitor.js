@@ -70,13 +70,22 @@ async function scanClients(coachId) {
       const logs = logsResponse?.logs ?? logsResponse ?? [];
 
       if (isMissingWeighIn(logs)) {
+        const existing = await pool.query(
+          `SELECT id FROM queue_items WHERE coach_id = $1 AND agent = 'progress-monitor' AND client_name = $2 AND created_at > NOW() - INTERVAL '24 hours'`,
+          [coachId, client.name]
+        );
+        if (existing.rows.length > 0) {
+          console.log(`[ProgressMonitor] Skipping ${client.name} — already queued today`);
+          continue;
+        }
+
         const msg = await anthropic.messages.create({
           model: 'claude-haiku-4-5-20251001',
           max_tokens: 200,
           messages: [
             {
               role: 'user',
-              content: `Write a 2-sentence coach note flagging that ${client.name} hasn't logged their weight in over ${MISSING_WEIGH_IN_DAYS} days. Suggest reaching out to check in. Keep it warm and brief.`,
+              content: `Write a short 2-sentence text message a fitness coach would send to check in on a client who hasn't logged their weight in over 7 days. No markdown, no headers, no hashtags. Start directly with the message. Keep it warm and casual.`,
             },
           ],
         });
