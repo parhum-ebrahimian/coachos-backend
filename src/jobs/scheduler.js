@@ -25,8 +25,13 @@ function buildCronExpression(schedule) {
   }
 
   if (Array.isArray(schedule.days) && schedule.days.length > 0) {
+    const abbrevs = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
     const nums = schedule.days
-      .map(d => DAY_NAMES.indexOf(d.toLowerCase()))
+      .map(d => {
+        const idx = abbrevs.indexOf(d.toLowerCase());
+        if (idx !== -1) return idx;
+        return DAY_NAMES.indexOf(d.toLowerCase());
+      })
       .filter(n => n !== -1)
       .join(',');
     if (nums) return `${minute} ${hour} * * ${nums}`;
