@@ -161,6 +161,39 @@ router.get('/:id/summary', async (req, res) => {
   }
 });
 
+// POST /api/clients/:id/send-message — send a message directly to a client via Trainerize
+router.post('/:id/send-message', async (req, res) => {
+  try {
+    let coachId;
+    if (req.user.role === 'admin') {
+      coachId = req.query.coach_id ? parseInt(req.query.coach_id, 10) : null;
+    } else {
+      coachId = req.user.coach_id;
+    }
+
+    if (!coachId) return res.status(400).json({ error: 'coach_id is required' });
+
+    const { message } = req.body;
+    if (!message) return res.status(400).json({ error: 'message is required' });
+
+    const { rows: coaches } = await pool.query(
+      'SELECT trainerize_trainer_id, trainerize_api_key FROM coaches WHERE id = $1',
+      [coachId]
+    );
+    const coach = coaches[0];
+    if (!coach?.trainerize_api_key) {
+      return res.status(400).json({ error: 'Coach missing Trainerize credentials' });
+    }
+
+    const credentials = { groupId: coach.trainerize_trainer_id, apiKey: coach.trainerize_api_key };
+    await trainerize.sendMessage(credentials, req.params.id, message);
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // POST /api/clients/:id/draft-reply — trigger messaging agent to draft a reply
 router.post('/:id/draft-reply', async (req, res) => {
   try {
