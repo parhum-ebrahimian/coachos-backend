@@ -1,6 +1,7 @@
 const express = require('express');
 const pool = require('../db');
 const auth = require('../middleware/auth');
+const trainerize = require('../services/trainerize');
 
 const router = express.Router();
 
@@ -104,39 +105,11 @@ router.post('/:id/approve', async (req, res) => {
         return res.status(400).json({ error: 'Coach missing Trainerize credentials' });
       }
 
-      const meta = typeof item.metadata === 'string' ? JSON.parse(item.metadata) : (item.metadata ?? {});
-      const { caloricGoal, proteinGrams, carbsGrams, fatGrams, proteinPercent, carbsPercent, fatPercent } = meta;
-
-      const encoded = Buffer.from(`${coach.trainerize_trainer_id}:${coach.trainerize_api_key}`).toString('base64');
-      const tzRes = await fetch('https://api.trainerize.com/v03/mealPlan/set', {
-        method: 'POST',
-        headers: {
-          Authorization: `Basic ${encoded}`,
-          'Content-Type': 'application/json',
-          Accept: 'application/json',
-        },
-        body: JSON.stringify({
-          userID: parseInt(item.client_id, 10),
-          mealPlan: {
-            mealPlanName: 'CoachOS Plan',
-            caloricGoal,
-            carbsGrams,
-            carbsPercent,
-            proteinGrams,
-            proteinPercent,
-            fatGrams,
-            fatPercent,
-          },
-        }),
-      });
-
-      if (!tzRes.ok) {
-        const text = await tzRes.text().catch(() => '');
-        return res.status(502).json({ error: `Trainerize mealPlan/set failed: ${tzRes.status} ${text}` });
-      }
+      const credentials = { groupId: coach.trainerize_trainer_id, apiKey: coach.trainerize_api_key };
+      await trainerize.sendMessage(credentials, parseInt(item.client_id, 10), item.draft);
 
       await pool.query('DELETE FROM queue_items WHERE id = $1', [item.id]);
-      return res.json({ success: true, action: 'meal-plan-pushed' });
+      return res.json({ success: true, action: 'meal-plan-sent' });
     }
 
     // progress-monitor, messaging, workout-monitor — approve and clear
