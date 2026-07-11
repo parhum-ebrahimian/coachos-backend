@@ -71,7 +71,7 @@ async function generatePlan(coachId, clientId, clientStats) {
   const clientName = clientStats.name || `Client #${clientId}`;
 
   const response = await anthropic.messages.create({
-    model: 'claude-sonnet-4-20250514',
+    model: 'claude-sonnet-4-6',
     max_tokens: 4096,
     system: [{ type: 'text', text: MEAL_PLAN_SYSTEM, cache_control: { type: 'ephemeral' } }],
     messages: [
@@ -133,7 +133,7 @@ async function generateAdjustment(coachId, clientId, weightData) {
     : '';
 
   const response = await anthropic.messages.create({
-    model: 'claude-sonnet-4-20250514',
+    model: 'claude-sonnet-4-6',
     max_tokens: 3000,
     system: [
       {

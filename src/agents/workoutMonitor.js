@@ -66,7 +66,7 @@ async function scanWorkoutCompliance(coachId) {
         if (missed <= 0) return;
 
         const msg = await anthropic.messages.create({
-          model: 'claude-haiku-4-5-20251001',
+          model: 'claude-haiku-4-5',
           max_tokens: 220,
           messages: [
             {
@@ -159,7 +159,7 @@ async function scanProgressiveOverload(coachId) {
           .join('\n');
 
         const msg = await anthropic.messages.create({
-          model: 'claude-haiku-4-5-20251001',
+          model: 'claude-haiku-4-5',
           max_tokens: 400,
           messages: [
             {

@@ -80,7 +80,7 @@ async function scanClients(coachId) {
         }
 
         const msg = await anthropic.messages.create({
-          model: 'claude-haiku-4-5-20251001',
+          model: 'claude-haiku-4-5',
           max_tokens: 200,
           messages: [
             {

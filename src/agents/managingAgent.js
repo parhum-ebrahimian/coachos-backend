@@ -36,7 +36,7 @@ async function getStyleProfile(coachId) {
     .join('\n\n---\n\n');
 
   const response = await anthropic.messages.create({
-    model: 'claude-opus-4-20250514',
+    model: 'claude-opus-4-5',
     max_tokens: 512,
     system: [
       {
