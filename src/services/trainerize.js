@@ -68,9 +68,12 @@ async function getClientSummary(credentials, clientId) {
       return await request(credentials, '/User/getClientSummary', { userId: clientId, unitWeight: 'lbs' });
     } catch (err) {
       lastErr = err;
-      if (attempt < delays.length && err.message.includes('rate limit or HTML')) {
+      const isRetryable = err.message.includes('rate limit or HTML')
+        || err.message.includes('500')
+        || err instanceof SyntaxError;
+      if (attempt < delays.length && isRetryable) {
         const wait = delays[attempt];
-        console.log(`[Trainerize] Rate limit on getClientSummary for client ${clientId}, retry ${attempt + 1}/${delays.length} in ${wait / 1000}s`);
+        console.warn(`[Trainerize] Retryable error on getClientSummary for client ${clientId} (attempt ${attempt + 1}/${delays.length}, wait ${wait / 1000}s): ${err.message}`);
         await new Promise((resolve) => setTimeout(resolve, wait));
       } else {
         throw err;
@@ -126,6 +129,10 @@ async function getWorkoutLogs(credentials, clientId) {
   return request(credentials, `/clients/${clientId}/workoutlogs`, {});
 }
 
+async function getClientCompliance(credentials, clientId, startDate, endDate) {
+  return request(credentials, '/compliance/getUserCompliance', { userID: clientId, startDate, endDate });
+}
+
 // ---------------------------------------------------------------------------
 
 module.exports = {
@@ -143,4 +150,5 @@ module.exports = {
   getMessages,
   sendMessage,
   getWorkoutLogs,
+  getClientCompliance,
 };
