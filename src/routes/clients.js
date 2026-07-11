@@ -2,6 +2,7 @@ const express = require('express');
 const pool = require('../db');
 const auth = require('../middleware/auth');
 const trainerize = require('../services/trainerize');
+const messaging = require('../agents/messaging');
 
 const router = express.Router();
 
@@ -154,6 +155,29 @@ router.get('/:id/summary', async (req, res) => {
       goal:             data?.goal ?? null,
       messages,
     });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// POST /api/clients/:id/draft-reply — trigger messaging agent to draft a reply
+router.post('/:id/draft-reply', async (req, res) => {
+  try {
+    let coachId;
+    if (req.user.role === 'admin') {
+      coachId = req.query.coach_id ? parseInt(req.query.coach_id, 10) : null;
+    } else {
+      coachId = req.user.coach_id;
+    }
+
+    if (!coachId) return res.status(400).json({ error: 'coach_id is required' });
+
+    const { message } = req.body;
+    if (!message) return res.status(400).json({ error: 'message is required' });
+
+    const result = await messaging.draftResponse(coachId, req.params.id, message);
+    res.json(result);
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Internal server error' });

@@ -29,15 +29,15 @@ async function draftResponse(coachId, clientId, incomingMessage) {
     getStyleProfile(coachId),
   ]);
 
-  const [historyResult, clientRow] = await Promise.all([
+  const [historyResult, clientsData] = await Promise.all([
     trainerize.getMessages(creds, clientId),
-    pool.query(
-      `SELECT name FROM clients WHERE id = $1 AND coach_id = $2`,
-      [clientId, coachId]
-    ),
+    trainerize.getClients(creds),
   ]);
 
-  const clientName = clientRow.rows[0]?.name || `Client #${clientId}`;
+  const match = (clientsData?.users ?? []).find(u => String(u.id) === String(clientId));
+  const clientName = match
+    ? `${match.firstName ?? ''} ${match.lastName ?? ''}`.trim() || `Client #${clientId}`
+    : `Client #${clientId}`;
 
   const recentHistory = Array.isArray(historyResult?.messages)
     ? historyResult.messages
