@@ -68,11 +68,7 @@ async function getTrainerizeCredentials(coachId) {
 async function generatePlan(coachId, clientId, clientStats) {
   const [settings] = await Promise.all([getAgentSettings(coachId)]);
 
-  const { rows } = await pool.query(
-    `SELECT name FROM clients WHERE id = $1 AND coach_id = $2`,
-    [clientId, coachId]
-  );
-  const clientName = rows[0]?.name || clientStats.name || `Client #${clientId}`;
+  const clientName = clientStats.name || `Client #${clientId}`;
 
   const response = await anthropic.messages.create({
     model: 'claude-sonnet-4-20250514',
@@ -117,12 +113,15 @@ async function generateAdjustment(coachId, clientId, weightData) {
     getTrainerizeCredentials(coachId),
   ]);
 
-  const [clientRow, existingPlan] = await Promise.all([
-    pool.query(`SELECT name FROM clients WHERE id = $1 AND coach_id = $2`, [clientId, coachId]),
+  const [clientsData, existingPlan] = await Promise.all([
+    trainerize.getClients(creds),
     trainerize.getClientNutritionPlan(creds, clientId),
   ]);
 
-  const clientName = clientRow.rows[0]?.name || `Client #${clientId}`;
+  const match = (clientsData?.users ?? []).find(u => String(u.id) === String(clientId));
+  const clientName = match
+    ? `${match.firstName ?? ''} ${match.lastName ?? ''}`.trim() || `Client #${clientId}`
+    : `Client #${clientId}`;
 
   const weightSummary = (weightData.logs || [])
     .map((l) => `  ${l.date}: ${l.weight} lbs`)
