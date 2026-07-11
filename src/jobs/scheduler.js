@@ -24,20 +24,16 @@ function buildCronExpression(schedule) {
     return `${minute} ${hour} * * *`;
   }
 
-  if (schedule.frequency === 'custom' && Array.isArray(schedule.days) && schedule.days.length > 0) {
+  if (Array.isArray(schedule.days) && schedule.days.length > 0) {
     const nums = schedule.days
       .map(d => DAY_NAMES.indexOf(d.toLowerCase()))
       .filter(n => n !== -1)
       .join(',');
-    if (!nums) return null;
-    return `${minute} ${hour} * * ${nums}`;
+    if (nums) return `${minute} ${hour} * * ${nums}`;
   }
 
   // Default: weekly on Monday
-  const day = Array.isArray(schedule.days) && schedule.days.length
-    ? Math.max(0, DAY_NAMES.indexOf(schedule.days[0].toLowerCase()))
-    : 1;
-  return `${minute} ${hour} * * ${day}`;
+  return `${minute} ${hour} * * 1`;
 }
 
 async function runCoachScan(coachId) {
