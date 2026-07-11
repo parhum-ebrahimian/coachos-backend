@@ -68,8 +68,7 @@ async function getClientSummary(credentials, clientId) {
       return await request(credentials, '/User/getClientSummary', { userId: clientId, unitWeight: 'lbs' });
     } catch (err) {
       lastErr = err;
-      console.log(`[Trainerize] getClientSummary error for client ${clientId}:`, err.constructor.name, JSON.stringify(err.message));
-      const isRetryable = err.message.includes('rate limit or HTML')
+const isRetryable = err.message.includes('rate limit or HTML')
         || err.message.includes('500')
         || err instanceof SyntaxError;
       if (attempt < delays.length && isRetryable) {

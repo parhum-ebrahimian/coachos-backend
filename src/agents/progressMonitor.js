@@ -113,7 +113,7 @@ async function scanClients(coachId) {
       results.errors.push({ clientId: client.id, clientName: client.name, error: err.message });
       console.error(`[ProgressMonitor] Error for ${client.name}: ${err.message}`);
     }
-    await new Promise((resolve) => setTimeout(resolve, 3000));
+    await new Promise((resolve) => setTimeout(resolve, 5000));
   }
 
   console.log(`[ProgressMonitor] Scan complete — scanned: ${results.scanned}, flagged: ${results.flagged.length}, errors: ${results.errors.length}`);
