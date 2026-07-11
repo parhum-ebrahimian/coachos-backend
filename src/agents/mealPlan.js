@@ -4,49 +4,11 @@ const trainerize = require('../services/trainerize');
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-// Cached across calls — long prompt that stays stable
-const MEAL_PLAN_SYSTEM = `You are an expert nutrition coach writing personalized meal plans for fitness clients.
+// Used by generateAdjustment which reasons about existing plans
+const MEAL_PLAN_SYSTEM = `You are an expert nutrition coach. Write like a coach talking directly to the client — use "you", not "the client". Conversational and encouraging. No clinical language, no generic disclaimers.`;
 
-════════════════════════════════════════
-REQUIRED OUTPUT FORMAT — follow exactly
-════════════════════════════════════════
-
-1. HEADER
-   ===== [CLIENT NAME]'S MEAL PLAN =====
-   Goal: [goal]
-   Daily Calories: [X] kcal  |  Protein: [X]g  |  Carbs: [X]g  |  Fat: [X]g
-
-2. A / B / C DAY ROTATION
-   • Day A = highest-carb training day
-   • Day B = moderate training or active rest
-   • Day C = lowest-carb rest day
-   Each day has exactly 3 meals + 1 snack.
-
-3. EACH FOOD ITEM:
-   • [Brand or food name] ([Xg])  —  [X]P / [X]C / [X]F / [X] cal
-   End each meal with:  MEAL TOTAL: [X]P / [X]C / [X]F / [X] cal
-   End each day with:   DAY [A/B/C] TOTAL: [X]P | [X]C | [X]F | [X] kcal
-
-4. GROCERY LIST  (after all 3 days)
-   Sections: PROTEINS: | PRODUCE: | DAIRY & EGGS: | GRAINS & PANTRY: | SNACKS & EXTRAS:
-   List each item with approximate weekly quantity.
-
-5. EATING OUT & SOCIAL OPTIONS
-   Give a specific order for each:
-   → Chipotle  → Chick-fil-A  → Pizza  → Burgers  → Mexican (non-Chipotle)  → Pasta / Italian
-   Format: "[Venue]: [exact order] — ~[X] cal, [X]P/[X]C/[X]F"
-
-6. MINDSET RULES  (5–7 bullets)
-   Practical, motivating principles about consistency, flexible eating, and momentum.
-
-════════════════════════════════════════
-VOICE & STYLE
-════════════════════════════════════════
-- Write like a coach talking directly to the client — use "you", not "the client".
-- Conversational and encouraging. No clinical language, no generic disclaimers.
-- Use real brand names where relevant: Kodiak Cakes, Oikos Triple Zero, Barebells protein bars,
-  Goodles pasta, Quest bars, Fairlife milk/protein, Chobani, Dave's Killer Bread, etc.
-- Gram measurements for all ingredients. No "medium banana" — use "banana (100g)".`;
+// Used by generatePlan — concise macro summary only
+const MACRO_SUMMARY_SYSTEM = `You are an expert nutrition coach sending a client their macro targets. Write 2-3 sentences of direct coaching context, then present the numbers clearly. No food lists, no grocery lists, no restaurant options, no mindset sections. Plain text only — no markdown headers, no bullet symbols beyond a simple dash. Keep the entire response under 200 words.`;
 
 async function getAgentSettings(coachId) {
   const { rows } = await pool.query(
@@ -72,36 +34,45 @@ async function generatePlan(coachId, clientId, clientStats) {
 
   const response = await anthropic.messages.create({
     model: 'claude-sonnet-4-6',
-    max_tokens: 4096,
-    system: [{ type: 'text', text: MEAL_PLAN_SYSTEM, cache_control: { type: 'ephemeral' } }],
+    max_tokens: 400,
+    system: [{ type: 'text', text: MACRO_SUMMARY_SYSTEM, cache_control: { type: 'ephemeral' } }],
     messages: [
       {
         role: 'user',
-        content: `Generate a complete meal plan for:
+        content: `Write a brief coaching note for ${clientName} explaining their new macro targets and why they're set this way.
 
-Name: ${clientName}
 Goal: ${clientStats.goal}
-Daily calories: ${clientStats.dailyCalories} kcal
-Protein: ${clientStats.protein}g | Carbs: ${clientStats.carbs}g | Fat: ${clientStats.fat}g
-Current weight: ${clientStats.currentWeight} lbs
-Target weight: ${clientStats.targetWeight} lbs
-Activity level: ${clientStats.activity || 'moderate'}
-Training days/week: ${clientStats.trainingDays || 4}
-Dietary restrictions: ${clientStats.restrictions?.join(', ') || 'none'}${clientStats.notes ? `\nNotes: ${clientStats.notes}` : ''}`,
+Current weight: ${clientStats.currentWeight} lbs → Target: ${clientStats.targetWeight} lbs
+Activity: ${clientStats.activity || 'moderate'} | Training days/week: ${clientStats.trainingDays || 4}
+Dietary restrictions: ${clientStats.restrictions?.join(', ') || 'none'}${clientStats.notes ? `\nNotes: ${clientStats.notes}` : ''}
+
+Targets:
+- Daily calories: ${clientStats.dailyCalories} kcal
+- Protein: ${clientStats.protein}g | Carbs: ${clientStats.carbs}g | Fat: ${clientStats.fat}g
+- Training days: ${clientStats.dailyCalories} kcal | Rest days: ${Math.round(clientStats.dailyCalories * 0.85)} kcal`,
       },
     ],
   });
 
   const draft = response.content[0].text;
-  const preview = `New meal plan — ${clientName} | ${clientStats.dailyCalories} kcal / ${clientStats.protein}g protein`;
+  const preview = `Macro targets — ${clientName} | ${clientStats.dailyCalories} kcal / ${clientStats.protein}g protein`;
 
-  // Full plans use a fixed high-confidence value; require explicit autonomous mode to skip review
   const autoSend = settings.autonomous && 90 >= settings.threshold;
 
+  const macroMeta = {
+    caloricGoal:     clientStats.dailyCalories,
+    proteinGrams:    clientStats.protein,
+    carbsGrams:      clientStats.carbs,
+    fatGrams:        clientStats.fat,
+    proteinPercent:  Math.round((clientStats.protein * 4 / clientStats.dailyCalories) * 100),
+    carbsPercent:    Math.round((clientStats.carbs * 4 / clientStats.dailyCalories) * 100),
+    fatPercent:      Math.round((clientStats.fat * 9 / clientStats.dailyCalories) * 100),
+  };
+
   await pool.query(
-    `INSERT INTO queue_items (coach_id, agent, client_name, preview, draft, auto_send)
-     VALUES ($1, $2, $3, $4, $5, $6)`,
-    [coachId, 'meal-plan', clientName, preview, draft, autoSend]
+    `INSERT INTO queue_items (coach_id, agent, client_name, client_id, preview, draft, auto_send, metadata)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+    [coachId, 'meal-plan', clientName, clientId.toString(), preview, draft, autoSend, JSON.stringify(macroMeta)]
   );
 
   return { draft, preview, autoSend, clientName };
@@ -184,10 +155,17 @@ Generate a targeted adjustment based on the weight trend.`,
 
   const autoSend = settings.autonomous && 85 >= settings.threshold;
 
+  const adjustmentMeta = {
+    adjustmentReason: weightData.plateauWeeks ? 'plateau' : (weightData.trend ?? 'unknown'),
+    plateauWeeks:     weightData.plateauWeeks ?? null,
+    weeklyChange:     weightData.weeklyChange ?? null,
+    trend:            weightData.trend ?? null,
+  };
+
   await pool.query(
-    `INSERT INTO queue_items (coach_id, agent, client_name, preview, draft, auto_send)
-     VALUES ($1, $2, $3, $4, $5, $6)`,
-    [coachId, 'meal-plan', clientName, preview, draft, autoSend]
+    `INSERT INTO queue_items (coach_id, agent, client_name, client_id, preview, draft, auto_send, metadata)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+    [coachId, 'meal-plan', clientName, clientId.toString(), preview, draft, autoSend, JSON.stringify(adjustmentMeta)]
   );
 
   return { draft, preview, autoSend, clientName };

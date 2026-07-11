@@ -82,6 +82,73 @@ router.patch('/:id', async (req, res) => {
   }
 });
 
+// POST /api/queue/:id/approve
+router.post('/:id/approve', async (req, res) => {
+  try {
+    const { rows: existing } = await pool.query(
+      'SELECT * FROM queue_items WHERE id = $1', [req.params.id]
+    );
+    if (!existing[0]) return res.status(404).json({ error: 'Queue item not found' });
+    const item = existing[0];
+    if (req.user.role !== 'admin' && item.coach_id !== req.user.coach_id) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
+    if (item.agent === 'meal-plan') {
+      const { rows: coaches } = await pool.query(
+        'SELECT trainerize_trainer_id, trainerize_api_key FROM coaches WHERE id = $1',
+        [item.coach_id]
+      );
+      const coach = coaches[0];
+      if (!coach?.trainerize_api_key) {
+        return res.status(400).json({ error: 'Coach missing Trainerize credentials' });
+      }
+
+      const meta = typeof item.metadata === 'string' ? JSON.parse(item.metadata) : (item.metadata ?? {});
+      const { caloricGoal, proteinGrams, carbsGrams, fatGrams, proteinPercent, carbsPercent, fatPercent } = meta;
+
+      const encoded = Buffer.from(`${coach.trainerize_trainer_id}:${coach.trainerize_api_key}`).toString('base64');
+      const tzRes = await fetch('https://api.trainerize.com/v03/mealPlan/set', {
+        method: 'POST',
+        headers: {
+          Authorization: `Basic ${encoded}`,
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+        body: JSON.stringify({
+          userID: parseInt(item.client_id, 10),
+          mealPlan: {
+            mealPlanName: 'CoachOS Plan',
+            caloricGoal,
+            carbsGrams,
+            carbsPercent,
+            proteinGrams,
+            proteinPercent,
+            fatGrams,
+            fatPercent,
+          },
+        }),
+      });
+
+      if (!tzRes.ok) {
+        const text = await tzRes.text().catch(() => '');
+        return res.status(502).json({ error: `Trainerize mealPlan/set failed: ${tzRes.status} ${text}` });
+      }
+
+      await pool.query('DELETE FROM queue_items WHERE id = $1', [item.id]);
+      return res.json({ success: true, action: 'meal-plan-pushed' });
+    }
+
+    // progress-monitor, messaging, workout-monitor — approve and clear
+    await pool.query('DELETE FROM queue_items WHERE id = $1', [item.id]);
+    return res.json({ success: true, action: 'approved' });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // DELETE /api/queue/:id
 router.delete('/:id', async (req, res) => {
   try {
