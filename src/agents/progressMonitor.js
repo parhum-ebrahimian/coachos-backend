@@ -2,6 +2,7 @@ const Anthropic = require('@anthropic-ai/sdk');
 const pool = require('../db');
 const trainerize = require('../services/trainerize');
 const mealPlan = require('./mealPlan');
+const { getStyleProfile } = require('./managingAgent');
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -48,9 +49,10 @@ function detectPlateau(logs) {
 }
 
 async function scanClients(coachId) {
-  const [settings, creds] = await Promise.all([
+  const [settings, creds, styleProfile] = await Promise.all([
     getAgentSettings(coachId),
     getTrainerizeCredentials(coachId),
+    getStyleProfile(coachId),
   ]);
 
   const data = await trainerize.getClients(creds);
@@ -85,7 +87,12 @@ async function scanClients(coachId) {
           messages: [
             {
               role: 'user',
-              content: `Write a short 2-sentence text message a fitness coach would send to check in on a client who hasn't logged their weight in over 7 days. No markdown, no headers, no hashtags. Start directly with the message. Keep it warm and casual.`,
+              content: `You draft check-in messages on behalf of a fitness coach.
+
+COACH STYLE GUIDE:
+${styleProfile}
+
+Write a short 2-sentence text message to ${client.name} who hasn't logged their weight in over ${MISSING_WEIGH_IN_DAYS} days. No markdown, no headers. Start directly with the message. Match the coach's voice from the style guide above.`,
             },
           ],
         });
