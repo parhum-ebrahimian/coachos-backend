@@ -3,6 +3,7 @@ const pool = require('../db');
 const auth = require('../middleware/auth');
 const trainerize = require('../services/trainerize');
 const { recordEdit } = require('../agents/managingAgent');
+const { sendNotification } = require('../services/notifications');
 
 const router = express.Router();
 
@@ -44,6 +45,10 @@ router.post('/', async (req, res) => {
        VALUES ($1, $2, $3, $4, $5, $5, $6) RETURNING *`,
       [targetCoachId, agent, client_name, preview || null, draft || null, auto_send]
     );
+    const notifMessage = `🚨 CoachOS Alert\n\nAgent: ${agent}\nClient: ${client_name}\nPreview: ${preview || draft?.slice(0, 100) || 'New item'}\n\nReview at https://coachos-frontend.onrender.com`;
+    sendNotification(targetCoachId, notifMessage, `CoachOS: ${agent} flagged ${client_name}`)
+      .catch(err => console.warn('[Notify] Failed:', err.message));
+
     res.status(201).json(rows[0]);
   } catch (err) {
     console.error(err);
