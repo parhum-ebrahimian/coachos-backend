@@ -44,6 +44,8 @@ CREATE TABLE IF NOT EXISTS queue_items (
   client_name   TEXT        NOT NULL,
   preview       TEXT,
   draft         TEXT,
+  original_draft TEXT,
+  status        TEXT        NOT NULL DEFAULT 'pending',
   auto_send     BOOLEAN     NOT NULL DEFAULT FALSE,
   created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

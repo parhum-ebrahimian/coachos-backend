@@ -19,8 +19,8 @@ router.get('/', async (req, res) => {
   try {
     const id = coachId(req);
     const { rows } = id
-      ? await pool.query('SELECT * FROM queue_items WHERE coach_id = $1 ORDER BY created_at DESC', [id])
-      : await pool.query('SELECT * FROM queue_items ORDER BY created_at DESC');
+      ? await pool.query(`SELECT * FROM queue_items WHERE coach_id = $1 AND status = 'pending' ORDER BY created_at DESC`, [id])
+      : await pool.query(`SELECT * FROM queue_items WHERE status = 'pending' ORDER BY created_at DESC`);
     res.json(rows);
   } catch (err) {
     console.error(err);
@@ -40,11 +40,51 @@ router.post('/', async (req, res) => {
 
   try {
     const { rows } = await pool.query(
-      `INSERT INTO queue_items (coach_id, agent, client_name, preview, draft, auto_send)
-       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+      `INSERT INTO queue_items (coach_id, agent, client_name, preview, draft, original_draft, auto_send)
+       VALUES ($1, $2, $3, $4, $5, $5, $6) RETURNING *`,
       [targetCoachId, agent, client_name, preview || null, draft || null, auto_send]
     );
     res.status(201).json(rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// GET /api/queue/stats
+router.get('/stats', async (req, res) => {
+  try {
+    const id = coachId(req);
+
+    const [approvedTodayResult, accuracyResult, activeClientsResult] = await Promise.all([
+      pool.query(
+        `SELECT COUNT(*) AS count FROM queue_items WHERE coach_id = $1 AND status = 'approved' AND created_at > NOW() - INTERVAL '24 hours'`,
+        [id]
+      ),
+      pool.query(
+        `SELECT
+           COUNT(*) FILTER (WHERE status = 'approved') AS total_approved,
+           COUNT(*) FILTER (WHERE status = 'approved' AND original_draft = draft) AS approved_without_edit
+         FROM queue_items WHERE coach_id = $1`,
+        [id]
+      ),
+      pool.query(
+        `SELECT COUNT(DISTINCT client_name) AS count FROM queue_items WHERE coach_id = $1 AND status = 'pending'`,
+        [id]
+      ),
+    ]);
+
+    const totalApproved = parseInt(accuracyResult.rows[0].total_approved, 10);
+    const approvedWithoutEdit = parseInt(accuracyResult.rows[0].approved_without_edit, 10);
+    const agentAccuracy = totalApproved > 0
+      ? Math.round((approvedWithoutEdit / totalApproved) * 100)
+      : null;
+
+    res.json({
+      approvedToday:  parseInt(approvedTodayResult.rows[0].count, 10),
+      agentAccuracy,
+      activeClients:  parseInt(activeClientsResult.rows[0].count, 10),
+    });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Internal server error' });
@@ -119,7 +159,7 @@ router.post('/:id/approve', async (req, res) => {
       const credentials = { groupId: coach.trainerize_trainer_id, apiKey: coach.trainerize_api_key };
       await trainerize.sendMessage(credentials, parseInt(item.client_id, 10), item.draft);
 
-      await pool.query('DELETE FROM queue_items WHERE id = $1', [item.id]);
+      await pool.query(`UPDATE queue_items SET status = 'approved' WHERE id = $1`, [item.id]);
       return res.json({ success: true, action: 'meal-plan-sent' });
     }
 
@@ -135,12 +175,12 @@ router.post('/:id/approve', async (req, res) => {
 
       const credentials = { groupId: coach.trainerize_trainer_id, apiKey: coach.trainerize_api_key };
       await trainerize.sendMessage(credentials, item.client_id, item.draft);
-      await pool.query('DELETE FROM queue_items WHERE id = $1', [item.id]);
+      await pool.query(`UPDATE queue_items SET status = 'approved' WHERE id = $1`, [item.id]);
       return res.json({ success: true, action: 'message-sent' });
     }
 
-    // workout-monitor and anything else — just approve and clear
-    await pool.query('DELETE FROM queue_items WHERE id = $1', [item.id]);
+    // workout-monitor and anything else — just mark approved
+    await pool.query(`UPDATE queue_items SET status = 'approved' WHERE id = $1`, [item.id]);
     return res.json({ success: true, action: 'approved' });
 
   } catch (err) {
