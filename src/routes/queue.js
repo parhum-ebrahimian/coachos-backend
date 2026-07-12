@@ -2,6 +2,7 @@ const express = require('express');
 const pool = require('../db');
 const auth = require('../middleware/auth');
 const trainerize = require('../services/trainerize');
+const { recordEdit } = require('../agents/managingAgent');
 
 const router = express.Router();
 
@@ -76,6 +77,16 @@ router.patch('/:id', async (req, res) => {
       `UPDATE queue_items SET ${setClauses.join(', ')} WHERE id = $1 RETURNING *`,
       values
     );
+
+    if (
+      req.body.draft &&
+      existing[0].draft &&
+      req.body.draft !== existing[0].draft
+    ) {
+      recordEdit(existing[0].coach_id, existing[0].agent, existing[0].draft, req.body.draft)
+        .catch(err => console.error('[queue] recordEdit failed:', err.message));
+    }
+
     res.json(rows[0]);
   } catch (err) {
     console.error(err);
