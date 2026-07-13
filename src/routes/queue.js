@@ -49,6 +49,34 @@ router.post('/', async (req, res) => {
     sendNotification(targetCoachId, notifMessage, `CoachOS: ${agent} flagged ${client_name}`)
       .catch(err => console.warn('[Notify] Failed:', err.message));
 
+    (async () => {
+      try {
+        const item = rows[0];
+        if (!item.auto_send) return;
+
+        const { rows: coaches } = await pool.query(
+          'SELECT trainerize_trainer_id, trainerize_api_key FROM coaches WHERE id = $1',
+          [item.coach_id]
+        );
+        const coach = coaches[0];
+        if (!coach?.trainerize_api_key || !item.client_id) return;
+
+        const credentials = { groupId: coach.trainerize_trainer_id, apiKey: coach.trainerize_api_key };
+
+        if (['messaging', 'progress-monitor', 'workout-monitor', 'meal-plan'].includes(item.agent)) {
+          await trainerize.sendMessage(credentials, item.client_id, item.draft);
+        }
+
+        await pool.query(
+          "UPDATE queue_items SET status = 'approved' WHERE id = $1",
+          [item.id]
+        );
+        console.log(`[AutoSend] Sent and approved queue item ${item.id} for ${item.client_name}`);
+      } catch (err) {
+        console.error('[AutoSend] Failed:', err.message);
+      }
+    })();
+
     res.status(201).json(rows[0]);
   } catch (err) {
     console.error(err);
