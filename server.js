@@ -84,6 +84,7 @@ app.use('/api/clients',        clientRoutes);
 app.use('/api/queue',          queueRoutes);
 app.use('/api/settings',       settingsRoutes);
 app.use('/api/agent-requests', agentRequestRoutes);
+app.use('/api/webhooks',      require('./src/routes/webhooks'));
 
 // ---------------------------------------------------------------------------
 // Boot
