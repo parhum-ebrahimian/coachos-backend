@@ -74,14 +74,12 @@ async function scanWorkoutCompliance(coachId) {
       }
 
       const existing = await pool.query(
-        `SELECT id FROM queue_items WHERE coach_id = $1 AND agent = 'workout-monitor' AND client_name = $2 AND created_at > NOW() - INTERVAL '24 hours'`,
+        `SELECT id, created_at FROM queue_items WHERE coach_id = $1 AND agent = 'workout-monitor' AND client_name = $2 AND status = 'pending' ORDER BY created_at DESC LIMIT 1`,
         [coachId, client.name]
       );
-      if (existing.rows.length > 0) {
-        console.log(`[WorkoutMonitor] Skipping ${client.name} — already queued today`);
-        await new Promise(resolve => setTimeout(resolve, 3000));
-        continue;
-      }
+
+      const daysInactive = Math.round((Date.now() - new Date(existing.rows[0]?.created_at ?? Date.now()).getTime()) / (1000 * 60 * 60 * 24)) || 0;
+      const dayLabel = existing.rows[0] ? `${daysInactive} day${daysInactive !== 1 ? 's' : ''}` : 'this week';
 
       const msg = await anthropic.messages.create({
         model: 'claude-haiku-4-5',
@@ -94,7 +92,7 @@ async function scanWorkoutCompliance(coachId) {
 COACH STYLE GUIDE:
 ${styleProfile}
 
-Write a brief 2-sentence coach note to ${client.name} flagging that they have completed zero workouts so far this week. No markdown, no headers. Start directly with the message. Match the coach's voice from the style guide above.`,
+Write a brief 2-sentence coach note to ${client.name} flagging that they have not completed any workouts in ${dayLabel}. No markdown, no headers. Start directly with the message. Match the coach's voice from the style guide above.`,
           },
         ],
       });
@@ -103,11 +101,19 @@ Write a brief 2-sentence coach note to ${client.name} flagging that they have co
       const preview = `No workouts this week — ${client.name}`;
       const autoSend = settings.autonomous && 80 >= settings.threshold;
 
-      await pool.query(
-        `INSERT INTO queue_items (coach_id, agent, client_name, client_id, preview, draft, original_draft, auto_send)
-         VALUES ($1, $2, $3, $4, $5, $6, $6, $7)`,
-        [coachId, 'workout-monitor', client.name, client.id.toString(), preview, draft, autoSend]
-      );
+      if (existing.rows.length > 0) {
+        await pool.query(
+          `UPDATE queue_items SET draft = $1, preview = $2, created_at = NOW() WHERE id = $3`,
+          [draft, preview, existing.rows[0].id]
+        );
+        console.log(`[WorkoutMonitor] Updated existing item for ${client.name} (${daysInactive}d inactive)`);
+      } else {
+        await pool.query(
+          `INSERT INTO queue_items (coach_id, agent, client_name, client_id, preview, draft, original_draft, auto_send)
+           VALUES ($1, $2, $3, $4, $5, $6, $6, $7)`,
+          [coachId, 'workout-monitor', client.name, client.id.toString(), preview, draft, autoSend]
+        );
+      }
 
       results.flagged.push({ clientId: client.id, clientName: client.name, reason: 'no-workouts-this-week' });
       console.log(`[WorkoutMonitor] Flagged ${client.name}: no-workouts-this-week`);

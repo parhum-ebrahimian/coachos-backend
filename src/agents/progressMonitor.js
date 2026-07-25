@@ -73,13 +73,14 @@ async function scanClients(coachId) {
 
       if (isMissingWeighIn(logs)) {
         const existing = await pool.query(
-          `SELECT id FROM queue_items WHERE coach_id = $1 AND agent = 'progress-monitor' AND client_name = $2 AND created_at > NOW() - INTERVAL '24 hours'`,
+          `SELECT id, created_at FROM queue_items WHERE coach_id = $1 AND agent = 'progress-monitor' AND client_name = $2 AND status = 'pending' ORDER BY created_at DESC LIMIT 1`,
           [coachId, client.name]
         );
-        if (existing.rows.length > 0) {
-          console.log(`[ProgressMonitor] Skipping ${client.name} — already queued today`);
-          continue;
-        }
+
+        const daysSinceMissing = logs.length > 0
+          ? Math.round((Date.now() - new Date(logs[logs.length - 1].date).getTime()) / (1000 * 60 * 60 * 24))
+          : MISSING_WEIGH_IN_DAYS;
+        const dayLabel = `${daysSinceMissing} day${daysSinceMissing !== 1 ? 's' : ''}`;
 
         const msg = await anthropic.messages.create({
           model: 'claude-haiku-4-5',
@@ -92,19 +93,28 @@ async function scanClients(coachId) {
 COACH STYLE GUIDE:
 ${styleProfile}
 
-Write a short 2-sentence text message to ${client.name} who hasn't logged their weight in over ${MISSING_WEIGH_IN_DAYS} days. No markdown, no headers. Start directly with the message. Match the coach's voice from the style guide above.`,
+Write a short 2-sentence text message to ${client.name} who hasn't logged their weight in ${dayLabel}. No markdown, no headers. Start directly with the message. Match the coach's voice from the style guide above.`,
             },
           ],
         });
 
         const draft = msg.content[0].text;
+        const preview = `Missing weigh-in — ${client.name}`;
         const autoSend = settings.autonomous && 80 >= settings.threshold;
 
-        await pool.query(
-          `INSERT INTO queue_items (coach_id, agent, client_name, preview, draft, auto_send)
-           VALUES ($1, $2, $3, $4, $5, $6)`,
-          [coachId, 'progress-monitor', client.name, `Missing weigh-in — ${client.name}`, draft, autoSend]
-        );
+        if (existing.rows.length > 0) {
+          await pool.query(
+            `UPDATE queue_items SET draft = $1, preview = $2, created_at = NOW() WHERE id = $3`,
+            [draft, preview, existing.rows[0].id]
+          );
+          console.log(`[ProgressMonitor] Updated existing item for ${client.name} (${daysSinceMissing}d since last weigh-in)`);
+        } else {
+          await pool.query(
+            `INSERT INTO queue_items (coach_id, agent, client_name, preview, draft, auto_send)
+             VALUES ($1, $2, $3, $4, $5, $6)`,
+            [coachId, 'progress-monitor', client.name, preview, draft, autoSend]
+          );
+        }
 
         results.flagged.push({ clientId: client.id, clientName: client.name, reason: 'missing-weigh-in' });
         console.log(`[ProgressMonitor] Flagged ${client.name}: missing-weigh-in`);
