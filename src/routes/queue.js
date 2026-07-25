@@ -179,40 +179,18 @@ router.post('/:id/approve', async (req, res) => {
       return res.status(403).json({ error: 'Forbidden' });
     }
 
-    if (item.agent === 'meal-plan') {
+    if (item.client_id) {
       const { rows: coaches } = await pool.query(
         'SELECT trainerize_trainer_id, trainerize_api_key FROM coaches WHERE id = $1',
         [item.coach_id]
       );
       const coach = coaches[0];
-      if (!coach?.trainerize_api_key) {
-        return res.status(400).json({ error: 'Coach missing Trainerize credentials' });
+      if (coach?.trainerize_api_key) {
+        const credentials = { groupId: coach.trainerize_trainer_id, apiKey: coach.trainerize_api_key };
+        await trainerize.sendMessage(credentials, item.client_id, item.draft);
       }
-
-      const credentials = { groupId: coach.trainerize_trainer_id, apiKey: coach.trainerize_api_key };
-      await trainerize.sendMessage(credentials, parseInt(item.client_id, 10), item.draft);
-
-      await pool.query(`UPDATE queue_items SET status = 'approved' WHERE id = $1`, [item.id]);
-      return res.json({ success: true, action: 'meal-plan-sent' });
     }
 
-    if (item.agent === 'messaging' || item.agent === 'progress-monitor') {
-      const { rows: coaches } = await pool.query(
-        'SELECT trainerize_trainer_id, trainerize_api_key FROM coaches WHERE id = $1',
-        [item.coach_id]
-      );
-      const coach = coaches[0];
-      if (!coach?.trainerize_api_key) {
-        return res.status(400).json({ error: 'Coach missing Trainerize credentials' });
-      }
-
-      const credentials = { groupId: coach.trainerize_trainer_id, apiKey: coach.trainerize_api_key };
-      await trainerize.sendMessage(credentials, item.client_id, item.draft);
-      await pool.query(`UPDATE queue_items SET status = 'approved' WHERE id = $1`, [item.id]);
-      return res.json({ success: true, action: 'message-sent' });
-    }
-
-    // workout-monitor and anything else — just mark approved
     await pool.query(`UPDATE queue_items SET status = 'approved' WHERE id = $1`, [item.id]);
     return res.json({ success: true, action: 'approved' });
 
