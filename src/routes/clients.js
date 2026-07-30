@@ -217,6 +217,73 @@ router.post('/:id/draft-reply', async (req, res) => {
   }
 });
 
+// GET /api/clients/:id/custom-fields
+router.get('/:id/custom-fields', async (req, res) => {
+  try {
+    let coachId;
+    if (req.user.role === 'admin') {
+      coachId = req.query.coach_id ? parseInt(req.query.coach_id, 10) : null;
+    } else {
+      coachId = req.user.coach_id;
+    }
+    if (!coachId) return res.status(400).json({ error: 'coach_id is required' });
+
+    const { rows } = await pool.query(
+      'SELECT program_start_date, program_expiration FROM client_custom_fields WHERE coach_id = $1 AND client_id = $2',
+      [coachId, req.params.id]
+    );
+
+    const row = rows[0];
+    res.json({
+      programStartDate:  row?.program_start_date  ?? null,
+      programExpiration: row?.program_expiration   ?? null,
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// PATCH /api/clients/:id/custom-fields
+router.patch('/:id/custom-fields', async (req, res) => {
+  try {
+    let coachId;
+    if (req.user.role === 'admin') {
+      coachId = req.query.coach_id ? parseInt(req.query.coach_id, 10) : null;
+    } else {
+      coachId = req.user.coach_id;
+    }
+    if (!coachId) return res.status(400).json({ error: 'coach_id is required' });
+
+    let { programStartDate, programExpiration } = req.body;
+
+    if (programStartDate && !programExpiration) {
+      const start = new Date(programStartDate);
+      start.setMonth(start.getMonth() + 6);
+      programExpiration = start.toISOString().slice(0, 10);
+    }
+
+    const { rows } = await pool.query(
+      `INSERT INTO client_custom_fields (coach_id, client_id, program_start_date, program_expiration)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (coach_id, client_id) DO UPDATE SET
+         program_start_date = COALESCE(EXCLUDED.program_start_date, client_custom_fields.program_start_date),
+         program_expiration  = COALESCE(EXCLUDED.program_expiration,  client_custom_fields.program_expiration)
+       RETURNING *`,
+      [coachId, req.params.id, programStartDate ?? null, programExpiration ?? null]
+    );
+
+    const row = rows[0];
+    res.json({
+      programStartDate:  row.program_start_date  ?? null,
+      programExpiration: row.program_expiration   ?? null,
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // GET /api/clients/:id
 router.get('/:id', async (req, res) => {
   try {

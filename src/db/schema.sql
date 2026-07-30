@@ -50,6 +50,15 @@ CREATE TABLE IF NOT EXISTS queue_items (
   created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS client_custom_fields (
+  id                  SERIAL PRIMARY KEY,
+  coach_id            INTEGER NOT NULL REFERENCES coaches(id) ON DELETE CASCADE,
+  client_id           TEXT    NOT NULL,
+  program_start_date  DATE,
+  program_expiration  DATE,
+  UNIQUE (coach_id, client_id)
+);
+
 CREATE TABLE IF NOT EXISTS agent_settings (
   id          SERIAL PRIMARY KEY,
   coach_id    INTEGER     NOT NULL REFERENCES coaches(id) ON DELETE CASCADE,
