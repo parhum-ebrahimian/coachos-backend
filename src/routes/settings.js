@@ -34,7 +34,7 @@ router.get('/agents', async (req, res) => {
 router.patch('/agents/:agent', async (req, res) => {
   const { agent } = req.params;
   const id = resolveCoachId(req);
-  const allowed = ['autonomous', 'threshold', 'scheduled', 'from_time', 'to_time'];
+  const allowed = ['autonomous', 'threshold', 'scheduled', 'from_time', 'to_time', 'missing_weighin_days', 'plateau_weeks', 'missed_workout_days'];
   const updates = Object.fromEntries(
     Object.entries(req.body).filter(([k]) => allowed.includes(k))
   );

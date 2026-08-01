@@ -58,6 +58,8 @@ async function scanWorkoutCompliance(coachId) {
     name: `${u.firstName ?? ''} ${u.lastName ?? ''}`.trim() || `Client #${u.id}`,
   }));
 
+  const missedWorkoutDays = settings.missed_workout_days ?? 7;
+
   const results = { scanned: clients.length, flagged: [], errors: [] };
 
   console.log(`[WorkoutMonitor] Starting scan for coach ${coachId}, ${clients.length} clients`);

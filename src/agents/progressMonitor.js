@@ -6,8 +6,6 @@ const { getStyleProfile } = require('./managingAgent');
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-const MISSING_WEIGH_IN_DAYS = 7;
-const PLATEAU_MIN_WEEKS = 3;
 const PLATEAU_THRESHOLD_LBS = 1.0;
 
 async function getAgentSettings(coachId) {
@@ -27,25 +25,25 @@ async function getTrainerizeCredentials(coachId) {
   return { groupId: rows[0].trainerize_trainer_id, apiKey: rows[0].trainerize_api_key };
 }
 
-function isMissingWeighIn(logs) {
+function isMissingWeighIn(logs, missingWeighInDays) {
   if (!Array.isArray(logs) || logs.length === 0) return true;
   const latest = new Date(logs[logs.length - 1].date);
   const daysSince = (Date.now() - latest.getTime()) / (1000 * 60 * 60 * 24);
-  return daysSince > MISSING_WEIGH_IN_DAYS;
+  return daysSince > missingWeighInDays;
 }
 
-function detectPlateau(logs) {
-  if (!Array.isArray(logs) || logs.length < PLATEAU_MIN_WEEKS) return null;
-  const recent = logs.slice(-PLATEAU_MIN_WEEKS);
+function detectPlateau(logs, plateauMinWeeks) {
+  if (!Array.isArray(logs) || logs.length < plateauMinWeeks) return null;
+  const recent = logs.slice(-plateauMinWeeks);
   const first = recent[0].weight;
   const last = recent[recent.length - 1].weight;
   if (Math.abs(last - first) >= PLATEAU_THRESHOLD_LBS) return null;
 
   const avgWeight = (recent.reduce((s, l) => s + l.weight, 0) / recent.length).toFixed(1);
-  const weeklyChange = ((last - first) / PLATEAU_MIN_WEEKS).toFixed(2);
+  const weeklyChange = ((last - first) / plateauMinWeeks).toFixed(2);
   const trend = last > first ? 'gaining' : last < first ? 'losing' : 'flat';
 
-  return { plateauWeeks: PLATEAU_MIN_WEEKS, averageWeight: avgWeight, weeklyChange: parseFloat(weeklyChange), trend, logs: recent };
+  return { plateauWeeks: plateauMinWeeks, averageWeight: avgWeight, weeklyChange: parseFloat(weeklyChange), trend, logs: recent };
 }
 
 async function scanClients(coachId) {
@@ -61,6 +59,9 @@ async function scanClients(coachId) {
     name: `${u.firstName ?? ''} ${u.lastName ?? ''}`.trim() || u.name || `Client #${u.id}`,
   }));
 
+  const missingWeighInDays = settings.missing_weighin_days ?? 7;
+  const plateauMinWeeks    = settings.plateau_weeks        ?? 3;
+
   const results = { scanned: clients.length, flagged: [], plateaus: [], errors: [] };
 
   console.log(`[ProgressMonitor] Starting scan for coach ${coachId}, ${clients.length} clients`);
@@ -71,7 +72,7 @@ async function scanClients(coachId) {
       const logsResponse = await trainerize.getClientWeightLogs(creds, client.id);
       const logs = logsResponse?.logs ?? logsResponse ?? [];
 
-      if (isMissingWeighIn(logs)) {
+      if (isMissingWeighIn(logs, missingWeighInDays)) {
         const existing = await pool.query(
           `SELECT id, created_at FROM queue_items WHERE coach_id = $1 AND agent = 'progress-monitor' AND client_name = $2 AND status = 'pending' ORDER BY created_at DESC LIMIT 1`,
           [coachId, client.name]
@@ -79,7 +80,7 @@ async function scanClients(coachId) {
 
         const daysSinceMissing = logs.length > 0
           ? Math.round((Date.now() - new Date(logs[logs.length - 1].date).getTime()) / (1000 * 60 * 60 * 24))
-          : MISSING_WEIGH_IN_DAYS;
+          : missingWeighInDays;
         const dayLabel = `${daysSinceMissing} day${daysSinceMissing !== 1 ? 's' : ''}`;
 
         const msg = await anthropic.messages.create({
@@ -120,7 +121,7 @@ Write a short 2-sentence text message to ${client.name} who hasn't logged their 
         console.log(`[ProgressMonitor] Flagged ${client.name}: missing-weigh-in`);
       }
 
-      const plateau = detectPlateau(logs);
+      const plateau = detectPlateau(logs, plateauMinWeeks);
       if (plateau) {
         await mealPlan.generateAdjustment(coachId, client.id, plateau);
         results.plateaus.push({ clientId: client.id, clientName: client.name, ...plateau });
