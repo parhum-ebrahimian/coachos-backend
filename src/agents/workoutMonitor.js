@@ -65,12 +65,29 @@ async function scanWorkoutCompliance(coachId) {
   console.log(`[WorkoutMonitor] Starting scan for coach ${coachId}, ${clients.length} clients`);
 
   for (const client of clients) {
-    console.log(`[WorkoutMonitor] Scanning ${client.name} (${client.id})`);
     try {
       const summary = await getClientSummaryWithRetry(creds, client.id);
-      const workoutsByWeek = summary?.workoutsByWeek ?? [];
+      const workoutsByWeek = Array.isArray(summary?.workoutsByWeek) ? summary.workoutsByWeek : [];
+      const workoutsTotal  = summary?.workoutsTotal ?? null;
 
-      if (workoutsByWeek[0] !== 0) {
+      console.log(`[WorkoutMonitor] Scanning ${client.name} (${client.id}) — workoutsByWeek: [${workoutsByWeek.join(', ')}]`);
+
+      // Not enough history to determine compliance — skip
+      if (workoutsByWeek.length < 2) {
+        await new Promise(resolve => setTimeout(resolve, 3000));
+        continue;
+      }
+
+      // Brand-new client with no workouts at all — skip
+      const allZero = workoutsByWeek.every(w => w === 0);
+      if (allZero && (workoutsTotal === 0 || workoutsTotal === null)) {
+        await new Promise(resolve => setTimeout(resolve, 3000));
+        continue;
+      }
+
+      // Last completed week is index length-2; current (in-progress) week is last index
+      const lastCompletedWeek = workoutsByWeek[workoutsByWeek.length - 2];
+      if (lastCompletedWeek !== 0) {
         await new Promise(resolve => setTimeout(resolve, 3000));
         continue;
       }
