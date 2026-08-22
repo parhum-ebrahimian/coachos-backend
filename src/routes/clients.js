@@ -230,7 +230,8 @@ router.get('/:id/custom-fields', async (req, res) => {
     if (!coachId) return res.status(400).json({ error: 'coach_id is required' });
 
     const { rows } = await pool.query(
-      'SELECT program_start_date, program_expiration FROM client_custom_fields WHERE coach_id = $1 AND client_id = $2',
+      `SELECT program_start_date, program_expiration, weight_goal, amount_paid, payment_type, age
+       FROM client_custom_fields WHERE coach_id = $1 AND client_id = $2`,
       [coachId, req.params.id]
     );
 
@@ -238,6 +239,10 @@ router.get('/:id/custom-fields', async (req, res) => {
     res.json({
       programStartDate:  row?.program_start_date  ?? null,
       programExpiration: row?.program_expiration   ?? null,
+      weightGoal:        row?.weight_goal          ?? null,
+      amountPaid:        row?.amount_paid          ?? null,
+      paymentType:       row?.payment_type         ?? 'one-time',
+      age:               row?.age                  ?? null,
     });
   } catch (err) {
     console.error(err);
@@ -256,7 +261,7 @@ router.patch('/:id/custom-fields', async (req, res) => {
     }
     if (!coachId) return res.status(400).json({ error: 'coach_id is required' });
 
-    let { programStartDate, programExpiration } = req.body;
+    let { programStartDate, programExpiration, weightGoal, amountPaid, paymentType, age } = req.body;
 
     if (programStartDate && !programExpiration) {
       const start = new Date(programStartDate);
@@ -265,19 +270,29 @@ router.patch('/:id/custom-fields', async (req, res) => {
     }
 
     const { rows } = await pool.query(
-      `INSERT INTO client_custom_fields (coach_id, client_id, program_start_date, program_expiration)
-       VALUES ($1, $2, $3, $4)
+      `INSERT INTO client_custom_fields
+         (coach_id, client_id, program_start_date, program_expiration, weight_goal, amount_paid, payment_type, age)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
        ON CONFLICT (coach_id, client_id) DO UPDATE SET
          program_start_date = COALESCE(EXCLUDED.program_start_date, client_custom_fields.program_start_date),
-         program_expiration  = COALESCE(EXCLUDED.program_expiration,  client_custom_fields.program_expiration)
+         program_expiration  = COALESCE(EXCLUDED.program_expiration,  client_custom_fields.program_expiration),
+         weight_goal         = COALESCE(EXCLUDED.weight_goal,         client_custom_fields.weight_goal),
+         amount_paid         = COALESCE(EXCLUDED.amount_paid,         client_custom_fields.amount_paid),
+         payment_type        = COALESCE(EXCLUDED.payment_type,        client_custom_fields.payment_type),
+         age                 = COALESCE(EXCLUDED.age,                 client_custom_fields.age)
        RETURNING *`,
-      [coachId, req.params.id, programStartDate ?? null, programExpiration ?? null]
+      [coachId, req.params.id, programStartDate ?? null, programExpiration ?? null,
+       weightGoal ?? null, amountPaid ?? null, paymentType ?? null, age ?? null]
     );
 
     const row = rows[0];
     res.json({
       programStartDate:  row.program_start_date  ?? null,
       programExpiration: row.program_expiration   ?? null,
+      weightGoal:        row.weight_goal          ?? null,
+      amountPaid:        row.amount_paid          ?? null,
+      paymentType:       row.payment_type         ?? 'one-time',
+      age:               row.age                  ?? null,
     });
   } catch (err) {
     console.error(err);

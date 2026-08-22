@@ -58,6 +58,10 @@ CREATE TABLE IF NOT EXISTS client_custom_fields (
   client_id           TEXT    NOT NULL,
   program_start_date  DATE,
   program_expiration  DATE,
+  weight_goal         NUMERIC(6,2),
+  amount_paid         NUMERIC(10,2),
+  payment_type        TEXT    NOT NULL DEFAULT 'one-time',
+  age                 INTEGER,
   UNIQUE (coach_id, client_id)
 );
 
