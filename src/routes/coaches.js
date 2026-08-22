@@ -84,8 +84,8 @@ router.patch('/:id', async (req, res) => {
     }
   }
 
-  const adminFields   = ['name', 'email', 'plan', 'subdomain', 'branding', 'trainerize_api_key', 'trainerize_trainer_id'];
-  const trainerFields = ['trainerize_api_key', 'trainerize_trainer_id'];
+  const adminFields   = ['name', 'email', 'plan', 'subdomain', 'branding', 'trainerize_api_key', 'trainerize_trainer_id', 'voice_guide', 'meal_plan_instructions'];
+  const trainerFields = ['trainerize_api_key', 'trainerize_trainer_id', 'voice_guide', 'meal_plan_instructions'];
   const allowed = isAdmin ? adminFields : trainerFields;
 
   const updates = Object.fromEntries(

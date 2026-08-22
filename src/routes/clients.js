@@ -3,6 +3,7 @@ const pool = require('../db');
 const auth = require('../middleware/auth');
 const trainerize = require('../services/trainerize');
 const messaging = require('../agents/messaging');
+const mealPlan = require('../agents/mealPlan');
 
 const router = express.Router();
 
@@ -281,6 +282,68 @@ router.patch('/:id/custom-fields', async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// POST /api/clients/:id/generate-meal-plan — manually trigger meal plan agent
+router.post('/:id/generate-meal-plan', async (req, res) => {
+  try {
+    let coachId;
+    if (req.user.role === 'admin') {
+      coachId = req.query.coach_id ? parseInt(req.query.coach_id, 10) : null;
+    } else {
+      coachId = req.user.coach_id;
+    }
+
+    if (!coachId) return res.status(400).json({ error: 'coach_id is required' });
+
+    const { customPrompt } = req.body;
+    const clientId = req.params.id;
+
+    const { rows: coaches } = await pool.query(
+      'SELECT trainerize_trainer_id, trainerize_api_key FROM coaches WHERE id = $1',
+      [coachId]
+    );
+    const coach = coaches[0];
+    if (!coach?.trainerize_api_key) {
+      return res.status(400).json({ error: 'Coach missing Trainerize credentials' });
+    }
+
+    const credentials = { groupId: coach.trainerize_trainer_id, apiKey: coach.trainerize_api_key };
+
+    const [clientsData, summary] = await Promise.all([
+      trainerize.getClients(credentials),
+      trainerize.getClientSummary(credentials, clientId),
+    ]);
+
+    const match = (clientsData?.users ?? []).find(u => String(u.id) === String(clientId));
+    const clientName = match
+      ? `${match.firstName ?? ''} ${match.lastName ?? ''}`.trim() || `Client #${clientId}`
+      : `Client #${clientId}`;
+
+    const nutrition = summary?.goal?.nutrition ?? {};
+
+    const clientStats = {
+      name:          clientName,
+      goal:          summary?.goal?.goal ?? 'General fitness',
+      currentWeight: summary?.lastWeight ?? null,
+      targetWeight:  summary?.goal?.targetWeight ?? null,
+      activity:      summary?.goal?.activity ?? 'moderate',
+      trainingDays:  summary?.goal?.trainingDaysPerWeek ?? 4,
+      restrictions:  summary?.goal?.dietaryRestrictions ?? [],
+      notes:         summary?.goal?.notes ?? null,
+      dailyCalories: nutrition.caloricGoal ?? null,
+      protein:       nutrition.proteinGrams ?? null,
+      carbs:         nutrition.carbsGrams ?? null,
+      fat:           nutrition.fatGrams ?? null,
+      ...(customPrompt ? { customPrompt } : {}),
+    };
+
+    const result = await mealPlan.generatePlan(coachId, clientId, clientStats);
+    res.json(result);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message || 'Internal server error' });
   }
 });
 

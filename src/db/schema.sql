@@ -6,8 +6,10 @@ CREATE TABLE IF NOT EXISTS coaches (
   email       TEXT        NOT NULL UNIQUE,
   plan        TEXT        NOT NULL DEFAULT 'free',
   subdomain   TEXT        UNIQUE,
-  branding    JSONB       NOT NULL DEFAULT '{}',
-  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  branding                 JSONB       NOT NULL DEFAULT '{}',
+  voice_guide              TEXT,
+  meal_plan_instructions   TEXT,
+  created_at               TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS users (

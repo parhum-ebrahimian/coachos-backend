@@ -28,18 +28,18 @@ async function getTrainerizeCredentials(coachId) {
 }
 
 async function generatePlan(coachId, clientId, clientStats) {
-  const [settings] = await Promise.all([getAgentSettings(coachId)]);
+  const [settings, { rows: coachRows }] = await Promise.all([
+    getAgentSettings(coachId),
+    pool.query(`SELECT meal_plan_instructions FROM coaches WHERE id = $1`, [coachId]),
+  ]);
 
-  const clientName = clientStats.name || `Client #${clientId}`;
+  const clientName          = clientStats.name || `Client #${clientId}`;
+  // customPrompt (per-request) overrides the coach's saved meal_plan_instructions
+  const mealPlanInstructions = clientStats.customPrompt?.trim()
+    || coachRows[0]?.meal_plan_instructions?.trim()
+    || null;
 
-  const response = await anthropic.messages.create({
-    model: 'claude-sonnet-4-6',
-    max_tokens: 400,
-    system: [{ type: 'text', text: MACRO_SUMMARY_SYSTEM, cache_control: { type: 'ephemeral' } }],
-    messages: [
-      {
-        role: 'user',
-        content: `Write a brief coaching note for ${clientName} explaining their new macro targets and why they're set this way.
+  const userContent = `Write a brief coaching note for ${clientName} explaining their new macro targets and why they're set this way.
 
 Goal: ${clientStats.goal}
 Current weight: ${clientStats.currentWeight} lbs → Target: ${clientStats.targetWeight} lbs
@@ -49,9 +49,13 @@ Dietary restrictions: ${clientStats.restrictions?.join(', ') || 'none'}${clientS
 Targets:
 - Daily calories: ${clientStats.dailyCalories} kcal
 - Protein: ${clientStats.protein}g | Carbs: ${clientStats.carbs}g | Fat: ${clientStats.fat}g
-- Training days: ${clientStats.dailyCalories} kcal | Rest days: ${Math.round(clientStats.dailyCalories * 0.85)} kcal`,
-      },
-    ],
+- Training days: ${clientStats.dailyCalories} kcal | Rest days: ${Math.round(clientStats.dailyCalories * 0.85)} kcal${mealPlanInstructions ? `\n\nCOACH'S CUSTOM INSTRUCTIONS (follow these):\n${mealPlanInstructions}` : ''}`;
+
+  const response = await anthropic.messages.create({
+    model: 'claude-sonnet-4-6',
+    max_tokens: 400,
+    system: [{ type: 'text', text: MACRO_SUMMARY_SYSTEM, cache_control: { type: 'ephemeral' } }],
+    messages: [{ role: 'user', content: userContent }],
   });
 
   const draft = response.content[0].text;

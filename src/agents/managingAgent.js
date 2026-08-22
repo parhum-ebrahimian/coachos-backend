@@ -18,42 +18,74 @@ async function recordEdit(coachId, agentType, original, edited) {
 }
 
 async function getStyleProfile(coachId) {
-  const { rows } = await pool.query(
-    `SELECT agent_type, original, edited
-     FROM style_edits
-     WHERE coach_id = $1
-     ORDER BY created_at DESC
-     LIMIT 50`,
-    [coachId]
-  );
+  const [{ rows: editRows }, { rows: coachRows }] = await Promise.all([
+    pool.query(
+      `SELECT agent_type, original, edited
+       FROM style_edits
+       WHERE coach_id = $1
+       ORDER BY created_at DESC
+       LIMIT 50`,
+      [coachId]
+    ),
+    pool.query(
+      `SELECT voice_guide FROM coaches WHERE id = $1`,
+      [coachId]
+    ),
+  ]);
 
-  if (rows.length === 0) {
+  const voiceGuide = coachRows[0]?.voice_guide?.trim() || null;
+  const hasEdits   = editRows.length > 0;
+
+  // No voice guide, no edits — return default
+  if (!voiceGuide && !hasEdits) {
     return 'No style edits recorded yet. Use a warm, professional tone. Be concise and encouraging. Address the client by first name.';
   }
 
-  const examples = rows
-    .map((r) => `[${r.agent_type}]\nOriginal:\n${r.original}\n\nEdited to:\n${r.edited}`)
-    .join('\n\n---\n\n');
+  // No voice guide but edits exist — synthesize as before
+  if (!voiceGuide) {
+    const examples = editRows
+      .map((r) => `[${r.agent_type}]\nOriginal:\n${r.original}\n\nEdited to:\n${r.edited}`)
+      .join('\n\n---\n\n');
 
-  const response = await anthropic.messages.create({
-    model: 'claude-opus-4-5',
-    max_tokens: 512,
-    system: [
-      {
-        type: 'text',
-        text: SYNTHESIS_SYSTEM,
-        cache_control: { type: 'ephemeral' },
-      },
-    ],
-    messages: [
-      {
-        role: 'user',
-        content: `Here are ${rows.length} examples of how this coach edited AI-drafted content:\n\n${examples}\n\nWrite their style guide.`,
-      },
-    ],
-  });
+    const response = await anthropic.messages.create({
+      model: 'claude-opus-4-5',
+      max_tokens: 512,
+      system: [{ type: 'text', text: SYNTHESIS_SYSTEM, cache_control: { type: 'ephemeral' } }],
+      messages: [
+        {
+          role: 'user',
+          content: `Here are ${editRows.length} examples of how this coach edited AI-drafted content:\n\n${examples}\n\nWrite their style guide.`,
+        },
+      ],
+    });
 
-  return response.content[0].text;
+    return response.content[0].text;
+  }
+
+  // Voice guide is set — always lead with it
+  const parts = [`COACH'S OWN INSTRUCTIONS (follow these exactly):\n${voiceGuide}`];
+
+  if (hasEdits) {
+    const examples = editRows
+      .map((r) => `[${r.agent_type}]\nOriginal:\n${r.original}\n\nEdited to:\n${r.edited}`)
+      .join('\n\n---\n\n');
+
+    const response = await anthropic.messages.create({
+      model: 'claude-opus-4-5',
+      max_tokens: 512,
+      system: [{ type: 'text', text: SYNTHESIS_SYSTEM, cache_control: { type: 'ephemeral' } }],
+      messages: [
+        {
+          role: 'user',
+          content: `Here are ${editRows.length} examples of how this coach edited AI-drafted content:\n\n${examples}\n\nWrite their style guide.`,
+        },
+      ],
+    });
+
+    parts.push(`LEARNED PATTERNS FROM PAST EDITS:\n${response.content[0].text}`);
+  }
+
+  return parts.join('\n\n');
 }
 
 module.exports = { recordEdit, getStyleProfile };
